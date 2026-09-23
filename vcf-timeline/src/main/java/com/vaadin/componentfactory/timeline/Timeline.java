@@ -24,6 +24,7 @@ import com.vaadin.componentfactory.timeline.event.ItemRemoveEvent;
 import com.vaadin.componentfactory.timeline.event.ItemResizeEvent;
 import com.vaadin.componentfactory.timeline.event.ItemsDragAndDropEvent;
 import com.vaadin.componentfactory.timeline.model.AxisOrientation;
+import com.vaadin.componentfactory.timeline.model.Group;
 import com.vaadin.componentfactory.timeline.model.Item;
 import com.vaadin.componentfactory.timeline.model.SnapStep;
 import com.vaadin.componentfactory.timeline.model.TimelineOptions;
@@ -59,6 +60,8 @@ public class Timeline extends Div {
 
   private List<Item> items = new ArrayList<>();
 
+  private List<Group> groups = new ArrayList<>();
+
   private TimelineOptions timelineOptions = new TimelineOptions();
 
   private List<String> selectedItemsIdsList = new ArrayList<>();
@@ -78,6 +81,11 @@ public class Timeline extends Div {
     this.items = new ArrayList<>(items);
   }
 
+  public Timeline(List<Item> items, List<Group> groups) {
+    this(items);
+    this.groups = new ArrayList<>(groups);
+  }
+
   protected TimelineOptions getTimelineOptions() {
     return this.timelineOptions;
   }
@@ -94,15 +102,22 @@ public class Timeline extends Div {
   private void initTimeline() {
     this.getElement()
         .executeJs(
-            "vcftimeline.create($0, $1, $2)",
+            "vcftimeline.create($0, $1, $2, $3)",
             this,
             "[" + convertItemsToJson() + "]",
+            "[" + convertGroupsToJson() + "]",
             getTimelineOptions().toJSON());
   }
 
   private String convertItemsToJson() {
     return this.items != null
         ? this.items.stream().map(item -> item.toJSON()).collect(Collectors.joining(","))
+        : "";
+  }
+
+  private String convertGroupsToJson() {
+    return this.groups != null
+        ? this.groups.stream().map(group -> group.toJSON()).collect(Collectors.joining(","))
         : "";
   }
 
@@ -129,6 +144,59 @@ public class Timeline extends Div {
    */
   public List<Item> getItems() {
     return items;
+  }
+
+  /**
+   * Sets the groups of the timeline. Items are assigned to a group through
+   * {@link Item#setGroup(String)}. An empty list (the default) means no
+   * grouping: items are rendered ungrouped, as in timelines without groups.
+   *
+   * @param groups the list of groups of the timeline
+   */
+  public void setGroups(List<Group> groups) {
+    this.groups = new ArrayList<>(groups);
+    updateGroups();
+  }
+
+  /**
+   * Return the list of groups that are currently part of the timeline.
+   *
+   * @return the list of groups of the timeline
+   */
+  public List<Group> getGroups() {
+    return groups;
+  }
+
+  /**
+   * Add a new group to the timeline.
+   *
+   * @param group the new group to add to the timeline
+   */
+  public void addGroup(Group group) {
+    this.groups.add(group);
+    updateGroups();
+  }
+
+  /**
+   * Remove a group from the timeline. Items still referencing the removed
+   * group are rendered ungrouped.
+   *
+   * @param groupId id of the group to remove
+   */
+  public void removeGroup(String groupId) {
+    this.groups.removeIf(group -> groupId.equals(group.getId()));
+    updateGroups();
+  }
+
+  /** Remove all groups, rendering every item ungrouped. */
+  public void clearGroups() {
+    this.groups.clear();
+    updateGroups();
+  }
+
+  private void updateGroups() {
+    this.getElement()
+        .executeJs("vcftimeline.setGroups($0, $1)", this, "[" + convertGroupsToJson() + "]");
   }
 
   /**
@@ -271,6 +339,18 @@ public class Timeline extends Div {
    */
   public void setStack(boolean stack) {
     getTimelineOptions().stack = stack;
+    updateTimelineOptions();
+  }
+
+  /**
+   * Sets the group property name used to order the group rows vertically.
+   * Supported values are "order", "content" and "id". By default groups are
+   * ordered by insertion order.
+   *
+   * @param groupOrder name of the group property used to order groups
+   */
+  public void setGroupOrder(String groupOrder) {
+    getTimelineOptions().groupOrder = groupOrder;
     updateTimelineOptions();
   }
 

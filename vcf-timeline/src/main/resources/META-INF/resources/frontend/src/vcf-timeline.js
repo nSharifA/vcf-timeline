@@ -24,22 +24,44 @@ import { DataSet, Timeline } from 'vis-timeline/standalone/umd/vis-timeline-grap
 
 window.vcftimeline = {
 
-	create: function(container, itemsJson, optionsJson) {
-        setTimeout(() => this._createTimeline(container, itemsJson, optionsJson));
+	create: function(container, itemsJson, groupsJson, optionsJson) {
+        setTimeout(() => this._createTimeline(container, itemsJson, groupsJson, optionsJson));
     },
 
-	_createTimeline: function(container, itemsJson, optionsJson) {
-	  // parsed items 	  
+	_createTimeline: function(container, itemsJson, groupsJson, optionsJson) {
+	  // parsed items
 	  var parsedItems = JSON.parse(itemsJson);
 
 	  // Create a DataSet
-	  var items = new DataSet(parsedItems);	
-		 
-	  // Get options for timeline configuration	
+	  var items = new DataSet(parsedItems);
+
+	  // Create a DataSet for the groups. A setGroups() call queued in the same
+	  // round trip runs before this deferred constructor, so a stashed value
+	  // (never applied to a timeline yet) takes precedence over groupsJson.
+	  // Note: an EMPTY groups DataSet must not be passed to the constructor —
+	  // any groups object (even empty) switches vis-timeline into grouped mode,
+	  // where items without a group reference are never placed, i.e. every
+	  // item of an ungrouped timeline would disappear.
+	  var groups;
+	  if (container.pendingGroupsDataSet !== undefined) {
+		groups = container.pendingGroupsDataSet;
+		container.pendingGroupsDataSet = null;
+	  } else {
+		groups = new DataSet(groupsJson ? JSON.parse(groupsJson) : []);
+	  }
+	  if (groups == null) {
+		groups = new DataSet([]);
+	  }
+	  container.groupsDataSet = groups;
+
+	  // Get options for timeline configuration
 	  var options = this._processOptions(container, optionsJson);
 
-	  // Create Timeline	
-	  var timeline = new Timeline(container, items, options);
+	  // Create Timeline (groups is the 3rd constructor argument, before
+	  // options; omitted entirely when there are no groups)
+	  var timeline = groups.getIds().length > 0
+			? new Timeline(container, items, groups, options)
+			: new Timeline(container, items, options);
       		
       const line_timeline = new Arrow(timeline);
 	  container.timeline = line_timeline;
@@ -260,6 +282,20 @@ window.vcftimeline = {
 		container.timeline._timeline.setItems(items);
 		container.timeline._timeline.fit();
 	},
+
+	setGroups: function(container, groupsJson) {
+		var groups = new DataSet(JSON.parse(groupsJson));
+		// Pass null to vis when the list is empty: an empty DataSet would keep
+		// the timeline in grouped mode and ungrouped items would not render.
+		if (container.timeline) {
+			container.timeline._timeline.setGroups(groups.getIds().length > 0 ? groups : null);
+			container.groupsDataSet = groups;
+		} else {
+			// timeline creation still pending (see create): stash for _createTimeline
+			container.pendingGroupsDataSet = groups.getIds().length > 0 ? groups : null;
+			container.groupsDataSet = null;
+		}
+	},
 	
 	revertMove: function(container, itemId, itemJson) {
 	    var itemData = container.timeline._timeline.itemSet.items[itemId].data;
@@ -328,23 +364,45 @@ window.vcftimeline = {
 	  // (horizontal line)
 	  var sortedItems = this._sortItems(items);
 
+	  // Chain items within their row only: with groups, each group renders in
+	  // its own row and an arrow must never jump between rows. Ungrouped
+	  // timelines have a single implicit row (group undefined), which keeps the
+	  // original connect-consecutive-by-start-time behavior unchanged.
+	  var byGroup = new Map();
+	  sortedItems.forEach(function(item) {
+		var key = item.group == null ? "" : String(item.group);
+		var bucket = byGroup.get(key);
+		if (bucket == undefined) {
+		  bucket = [];
+		  byGroup.set(key, bucket);
+		}
+		bucket.push(item);
+	  });
+
       // Create connections for items
 	  var connections = [];
-	  for(let i = 0; i < sortedItems.length-1; i++) {
-		  var element = sortedItems[i];
-		  var nextElement = sortedItems[i + 1];
+	  var id = 1;
+	  byGroup.forEach(function(groupItems) {
+		  for(let i = 0; i < groupItems.length-1; i++) {
+			  var element = groupItems[i];
+			  var nextElement = groupItems[i + 1];
 
-		  var id = i + 1;
-		  var id_item_1 = element.id;
-		  var id_item_2= nextElement.id;
+			  // Only chain when nextElement actually follows element in time.
+			  // Overlapping items are stacked side by side, not sequenced:
+			  // an arrow between them would point backwards and is not a
+			  // "leads to" relationship.
+			  if (new Date(nextElement.start).valueOf() < new Date(element.end).valueOf()) {
+				  continue;
+			  }
 
-		  var item = {}
-		  item ["id"] = id;
-		  item ["id_item_1"] = id_item_1;
-		  item ["id_item_2"] = id_item_2;
+			  var item = {}
+			  item ["id"] = id++;
+			  item ["id_item_1"] = element.id;
+			  item ["id_item_2"] = nextElement.id;
 
-		  connections.push(item);			  	  
-	  }		
+			  connections.push(item);
+		  }
+	  });
 	  return connections;
 	},
 	
@@ -354,6 +412,19 @@ window.vcftimeline = {
 	},
 
 	_updateTimelineHeight: function(container) {
+		// With groups, vis-timeline's native auto height (options.height left
+		// undefined) grows the main area to fit every group row. Freezing the
+		// height to the first measured container rect would clip the last
+		// group's row, so skip the freeze while groups are present and undo
+		// it if a freeze from the ungrouped state is still in effect.
+		if(container.groupsDataSet != undefined && container.groupsDataSet.getIds().length > 0){
+			if(container.timelineHeight != undefined
+					&& container.timeline._timeline.options.height == container.timelineHeight){
+				container.timeline._timeline.options.height = undefined;
+			}
+			container.timelineHeight = undefined;
+			return;
+		}
 		if(container.timelineHeight == undefined){
 			container.timelineHeight = container.timeline._timeline.dom.container.getBoundingClientRect().height;
 		}

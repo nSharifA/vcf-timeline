@@ -21,6 +21,7 @@ Timeline component provides support to the following features:
 - Possibility to revert resizing or dragging if condition is not met.
 - Autoscrolling when reaching limits of visible range.
 - Tooltip on item update.
+- Group items into rows using `Timeline.setGroups(...)` and `Item.setGroup(...)`.
 
 (*) Horizontal lines implementation is based on [timeline-arrows](https://github.com/javdome/timeline-arrows).
 

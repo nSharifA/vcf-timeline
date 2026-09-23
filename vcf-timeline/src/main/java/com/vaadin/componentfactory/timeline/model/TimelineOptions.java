@@ -100,6 +100,9 @@ public class TimelineOptions {
   public Integer snapStep = SnapStep.QUARTER.getMinutes();
   
   public boolean autoZoom = false;
+
+  /* Property name of the group used to order group rows, e.g. "order". */
+  public String groupOrder;
   
   public boolean tooltipOnItemUpdateTime = false;
   
@@ -134,6 +137,7 @@ public class TimelineOptions {
     js.put("showTooltips", showTooltips);
     js.put("snapStep", snapStep);
     js.put("autoZoom", autoZoom);
+    Optional.ofNullable(groupOrder).ifPresent(v -> js.put("groupOrder", v));
     
     js.put("tooltipOnItemUpdateTime", tooltipOnItemUpdateTime);
     Optional.ofNullable(tooltipOnItemUpdateTimeDateFormat).ifPresent(v -> js.put("tooltipOnItemUpdateTimeDateFormat", v.toString()));

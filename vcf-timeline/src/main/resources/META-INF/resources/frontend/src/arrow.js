@@ -101,9 +101,20 @@
             var bothItemsExist = false;
         }
 
-        if (bothItemsExist) {
-            var item_1 = this._getItemPos(this._timeline.itemSet.items[dep.id_item_1]);
-            var item_2 = this._getItemPos(this._timeline.itemSet.items[dep.id_item_2]);
+        var item1 = this._timeline.itemSet.items[dep.id_item_1];
+        var item2 = this._timeline.itemSet.items[dep.id_item_2];
+
+        // Items that are not laid out in the DOM have no parent and no
+        // coordinates to draw from. In a grouped timeline that is the case
+        // for every item without a (valid) group: vis keeps them in
+        // itemsData and in itemSet.items but never places them.
+        var bothItemsDrawn = item1 != null && item2 != null &&
+            item1.parent != null && item2.parent != null &&
+            item1.left != null && item2.left != null;
+
+        if (bothItemsExist && bothItemsDrawn) {
+            var item_1 = this._getItemPos(item1);
+            var item_2 = this._getItemPos(item2);
             // As demo, we put an arrow between item 0 and item1, from the one that is more on left to the one more on right.
             if (item_2.mid_x < item_1.mid_x) [item_1, item_2] = [item_2, item_1]; 
             this._dependencyPath[index].setAttribute("id", dep.id);
@@ -136,17 +147,34 @@
     //Función que recibe in Item y devuelve la posición en pantalla del item.
     _getItemPos (item) {
         let left_x = item.left;
-
+        let width = item.width;
+        let height = item.height;
+        // Vertical offset from the top of the center panel. The bottom-up
+        // parent formula only holds for a single ungrouped lane: in grouped
+        // and stacked timelines it does not match the lane the item is
+        // actually rendered in, so prefer the rendered DOM rectangle.
         let top_y = item.parent.top + item.parent.height - item.top - item.height;
+
+        let element = item.dom && (item.dom.content || item.dom.point);
+        let center = this._timeline.dom && this._timeline.dom.center;
+        if (element && center) {
+            let itemRect = element.getBoundingClientRect();
+            let centerRect = center.getBoundingClientRect();
+            left_x = itemRect.left - centerRect.left;
+            top_y = itemRect.top - centerRect.top;
+            width = itemRect.width;
+            height = itemRect.height;
+        }
+
         return {
             left: left_x,
             top: top_y,
-            right: left_x + item.width,
-            bottom: top_y + item.height,
-            mid_x: left_x + item.width / 2,
-            mid_y: item.top + this._minItemHeight / 2,
-            width: item.width,
-            height: item.height,
+            right: left_x + width,
+            bottom: top_y + height,
+            mid_x: left_x + width / 2,
+            mid_y: top_y + height / 2,
+            width: width,
+            height: height,
         }
     }
 
@@ -219,11 +247,17 @@
     _getMinItemHeight(){
         var minHeight = Number.MAX_VALUE;
         this._timeline.itemsData.forEach(item => {
-        let height = this._timeline.itemSet.items[item.id].height;    
-            if(height < minHeight){
+        let itemInDom = this._timeline.itemSet.items[item.id];
+        let height = itemInDom ? itemInDom.height : null;
+            // Unplaced items (e.g. without a group in a grouped timeline)
+            // report a null height, which must not be treated as 0.
+            if(height != null && height < minHeight){
                 minHeight = height;
             }
         });
+        if (minHeight === Number.MAX_VALUE) {
+            minHeight = 0;
+        }
         return minHeight;
     }
 

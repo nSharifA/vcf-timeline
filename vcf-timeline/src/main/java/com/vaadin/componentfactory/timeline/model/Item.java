@@ -48,6 +48,8 @@ public class Item {
 
   private String className;
 
+  private String group;
+
   public Item() {}
 
   public Item(LocalDateTime start, LocalDateTime end) {
@@ -59,6 +61,11 @@ public class Item {
   public Item(LocalDateTime start, LocalDateTime end, String content) {
     this(start, end);
     this.setContent(content);
+  }
+
+  public Item(LocalDateTime start, LocalDateTime end, String content, String group) {
+    this(start, end, content);
+    this.setGroup(group);
   }
 
   public String getId() {
@@ -133,6 +140,19 @@ public class Item {
     this.className = className;
   }
 
+  public String getGroup() {
+    return group;
+  }
+
+  /**
+   * Id of the group this item belongs to, referring to a group registered via
+   * {@link com.vaadin.componentfactory.timeline.Timeline#setGroups}. Null leaves
+   * the item ungrouped.
+   */
+  public void setGroup(String group) {
+    this.group = group;
+  }
+
   @Override
   public int hashCode() {
     return Objects.hash(id);
@@ -169,6 +189,7 @@ public class Item {
 
     Optional.ofNullable(getTitle()).ifPresent(v -> js.put("title", v));
     Optional.ofNullable(getClassName()).ifPresent(v -> js.put("className", v));
+    Optional.ofNullable(getGroup()).ifPresent(v -> js.put("group", v));
     return js.toString();
   }
 }

@@ -134,15 +134,16 @@
             </resource>
         </resources>
         <plugins>
-            <!-- Jetty plugin for easy testing without a server -->
+            <!-- Jetty plugin for easy testing without a server.
+                 Vaadin 25 targets Jakarta EE 11 (Servlet 6.1), which needs
+                 Jetty 12's ee11 environment; Jetty 11 tops out at Servlet 6.0
+                 and silently 404s because the Vaadin servlet cannot deploy. -->
             <plugin>
-                <groupId>org.eclipse.jetty</groupId>
-                <artifactId>jetty-maven-plugin</artifactId>
-                <version>11.0.24</version>
+                <groupId>org.eclipse.jetty.ee11</groupId>
+                <artifactId>jetty-ee11-maven-plugin</artifactId>
+                <version>12.1.13</version>
                 <configuration>
-                    <scanIntervalSeconds>-1</scanIntervalSeconds>
-                    <stopKey>${project.artifactId}</stopKey>
-                    <stopPort>8081</stopPort>
+                    <scan>0</scan>
                 </configuration>
             </plugin>
 

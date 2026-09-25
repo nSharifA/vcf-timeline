@@ -43,6 +43,8 @@ package-lock.json
 package.json
 webpack.config.js
 webpack.generated.js
+vite.config.ts
+vite.generated.ts
 
 timeline/src/main/resources/rebel.xml
 .vscode/

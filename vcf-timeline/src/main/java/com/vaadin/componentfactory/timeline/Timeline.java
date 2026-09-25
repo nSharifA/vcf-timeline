@@ -343,6 +343,19 @@ public class Timeline extends Div {
   }
 
   /**
+   * Sets whether the connection arrows between consecutive items are drawn.
+   * The arrows are rendered client-side by the bundled arrow.js script, which
+   * chains items in time order; disabling them stops that script from drawing
+   * and removes any arrows already drawn. By default arrows are enabled.
+   *
+   * @param arrowsEnabled true if connection arrows should be drawn
+   */
+  public void setArrowsEnabled(boolean arrowsEnabled) {
+    getTimelineOptions().arrowsEnabled = arrowsEnabled;
+    updateTimelineOptions();
+  }
+
+  /**
    * Sets the group property name used to order the group rows vertically.
    * Supported values are "order", "content" and "id". By default groups are
    * ordered by insertion order.

@@ -67,9 +67,11 @@ window.vcftimeline = {
 	  container.timeline = line_timeline;
 
 	  container.timeline._timeline.on("changed", () => {
-		this._updateConnections(container);
+		if (container.arrowsEnabled !== false) {
+		  this._updateConnections(container);
+		}
 		this._updateTimelineHeight(container);
-	  }); 
+	  });
 
 	  container.timeline._timeline.on('select', (properties) => {
 		container.$server.onSelect(properties.items);
@@ -195,6 +197,11 @@ window.vcftimeline = {
 	  var autoZoom = parsedOptions.autoZoom;
 	  delete parsedOptions.autoZoom;
 
+	  // Not a vis option: gates the arrow.js dependency drawing. Stashed on the
+	  // container so the event handlers below can consult it at any time.
+	  container.arrowsEnabled = parsedOptions.arrowsEnabled !== false;
+	  delete parsedOptions.arrowsEnabled;
+
 	  var tooltipOnItemUpdateTime = parsedOptions.tooltipOnItemUpdateTime;
 	  var tooltipDateFormat = parsedOptions.tooltipOnItemUpdateTimeDateFormat;
 	  var tooltipTemplate = parsedOptions.tooltipOnItemUpdateTimeTemplate;
@@ -217,7 +224,9 @@ window.vcftimeline = {
 				var startDate = window.vcftimeline._convertDate(item.start);
 				var endDate = window.vcftimeline._convertDate(item.end);
 				//update connections
-				window.vcftimeline._updateConnections(container);
+				if (container.arrowsEnabled !== false) {
+					window.vcftimeline._updateConnections(container);
+				}
 				//call server
 				container.$server.onMove(item.id, startDate, endDate, isResizedItem);
 			} else {
@@ -269,7 +278,18 @@ window.vcftimeline = {
 
 	setOptions: function(container, optionsJson) {
 		var options = this._processOptions(container, optionsJson)
+		if (!container.timeline) {
+			return; // timeline creation still pending (see create); the flag
+				        // stashed above is re-read by _createTimeline's options
+		}
 		container.timeline._timeline.setOptions(options);
+		// Sync already-drawn arrows with the arrowsEnabled flag _processOptions
+		// just stashed: clear them when disabled, redraw when (re)enabled.
+		if (container.arrowsEnabled) {
+			this._updateConnections(container);
+		} else {
+			container.timeline.setDependencies([]);
+		}
 	},
 
   	addItem: function(container, newItemJson) {

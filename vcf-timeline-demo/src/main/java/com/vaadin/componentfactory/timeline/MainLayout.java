@@ -30,6 +30,8 @@ public class MainLayout extends AppLayout {
         new RouterLink("Tooltip on item update ", TooltipOnUpdateExample.class);
     final RouterLink groupedItemsExample =
         new RouterLink("Grouped items", GroupedItemsExample.class);
+    final RouterLink syncedRowsExample =
+        new RouterLink("Grouped rows with side components", SyncedRowsExample.class);
 
     final VerticalLayout menuLayout = new VerticalLayout(readonlyEmptyExample, addEmptyItemsExample,
         resizeItems, dndItems, tooltipsExample, classNameExample, readonlyExample,

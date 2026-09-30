@@ -457,6 +457,62 @@ window.vcftimeline = {
 		if(container.timeline._timeline.options.height == undefined){
 			container.timeline._timeline.options.height = container.timelineHeight;
 		}
+		// The freeze above is armed on the FIRST changed event, and that races
+		// with vis's initial fit and item stacking (with server push the first
+		// changed often lands before the layout has settled, most reliably after
+		// a browser refresh): measured too early the recorded height is the
+		// pre-stacking one (~30px), and since every later redraw takes its height
+		// from options.height, the timeline stays collapsed with the grown
+		// itemset inside it. Schedule a bounded self-check that heals such a
+		// stale freeze; see _ensureFrozenHeight.
+		if(container.frozenHeightChecked == undefined){
+			container.frozenHeightChecked = true;
+			var me = this;
+			var timeline = container.timeline._timeline;
+			var deadline = Date.now() + 2500;
+			requestAnimationFrame(function() {
+				me._ensureFrozenHeight(container, timeline, deadline);
+			});
+		}
+	},
+
+	// Healer for the ungrouped height freeze in _updateTimelineHeight: while OUR
+	// freeze is in effect (options.height still equals our own measurement, so a
+	// height set elsewhere is never touched) and the stacked items no longer fit
+	// the frozen box, clear BOTH values and redraw — the changed event that
+	// follows then re-freezes, as usual, but to the now-correct grown height.
+	// Checks repeat every 150ms until a short grace deadline, because a too-early
+	// first changed can even precede the items arriving over push. The deadline
+	// is what keeps this out of later user interaction: once the timeline is
+	// live, pinning the height is the intended behaviour (synced rows must not
+	// jump while zooming), so only the initial-load race may be healed.
+	_ensureFrozenHeight: function(container, timeline, deadline) {
+		if (!container.timeline || container.timeline._timeline !== timeline) {
+			return; // timeline destroyed or rebuilt in the meantime
+		}
+		if (!timeline.dom.centerContainer.isConnected) {
+			return; // detached from the page
+		}
+		if (!timeline.options.verticalScroll) {
+			// not for vertical-scroll layouts: content taller than the box is
+			// the point there, not a stale freeze
+			var frame = timeline.itemSet != undefined ? timeline.itemSet.dom.frame : undefined;
+			var stale = frame != undefined
+					&& container.timelineHeight != undefined
+					&& timeline.options.height == container.timelineHeight
+					&& frame.offsetHeight > timeline.dom.centerContainer.clientHeight + 1;
+			if (stale) {
+				container.timelineHeight = undefined;
+				timeline.options.height = undefined;
+				timeline.redraw();
+			}
+		}
+		if (Date.now() < deadline) {
+			var me = this;
+			setTimeout(function() {
+				me._ensureFrozenHeight(container, timeline, deadline);
+			}, 150);
+		}
 	},
 
 	// Grouped timelines could start out with collapsed .vis-group rows after a

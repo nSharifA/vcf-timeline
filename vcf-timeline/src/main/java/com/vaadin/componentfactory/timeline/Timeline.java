@@ -69,7 +69,18 @@ public class Timeline extends Div {
   private Map<String, Pair<LocalDateTime, LocalDateTime>> movedItemsMap = new HashMap<>();
   
   private Map<String, Pair<LocalDateTime, LocalDateTime>> movedItemsOldValuesMap = new HashMap<>();
-  
+
+  /**
+   * Item JSONs queued by {@link #addItem(Item)} since the last client round
+   * trip; flushed as ONE executeJs (vcftimeline.addItems) instead of one call
+   * per item, which caused a redraw storm per added item (see
+   * {@link #flushPendingAdds()}).
+   */
+  private List<String> pendingAddItemJsons = new ArrayList<>();
+
+  /** Whether a flush of {@link #pendingAddItemJsons} is already scheduled. */
+  private boolean addItemFlushScheduled = false;
+
   public Timeline() {
     setId("visualization" + this.hashCode());
     setWidthFull();
@@ -100,6 +111,11 @@ public class Timeline extends Div {
   }
 
   private void initTimeline() {
+    // Anything addItem() buffered while detached is carried by the create
+    // call below (it serializes this.items as of now), so it must NOT also be
+    // flushed as separate adds — the connector would only dedupe it by id.
+    pendingAddItemJsons.clear();
+    addItemFlushScheduled = false;
     this.getElement()
         .executeJs(
             "vcftimeline.create($0, $1, $2, $3)",
@@ -127,11 +143,47 @@ public class Timeline extends Div {
    * @param item the new item to add to the timeline
    */
   public void addItem(Item item) {
-    this.getElement().executeJs("vcftimeline.addItem($0, $1)", this, item.toJSON());
     this.items.add(item);
+    if (getElement().getNode().isAttached()) {
+      // Buffered and sent as a single addItems call at the end of this round
+      // trip. While detached there is nothing to send: onAttach's create
+      // call carries the whole item list to the client anyway.
+      pendingAddItemJsons.add(item.toJSON());
+      scheduleAddItemsFlush();
+    }
+  }
+
+  private void scheduleAddItemsFlush() {
+    if (addItemFlushScheduled) {
+      return;
+    }
+    getUI()
+        .ifPresent(
+            ui -> {
+              addItemFlushScheduled = true;
+              ui.beforeClientResponse(this, context -> flushPendingAdds());
+            });
+  }
+
+  /**
+   * Sends every item buffered by {@link #addItem(Item)} since the last flush
+   * in one executeJs call. Per-item calls each triggered a vis fit+redraw, so
+   * a load adding N items fired N redraw storms; one batched call fits once.
+   * Also called inline before other item-targeting commands, to keep client
+   * side command order consistent with the server side call order.
+   */
+  private void flushPendingAdds() {
+    addItemFlushScheduled = false;
+    if (pendingAddItemJsons.isEmpty()) {
+      return;
+    }
+    String itemsJson = "[" + String.join(",", pendingAddItemJsons) + "]";
+    pendingAddItemJsons.clear();
+    this.getElement().executeJs("vcftimeline.addItems($0, $1)", this, itemsJson);
   }
 
   public void setItems(List<Item> items) {
+    flushPendingAdds();
     this.items = new ArrayList<>(items);
     this.getElement()
         .executeJs("vcftimeline.setItems($0, $1)", this, "[" + convertItemsToJson() + "]");
@@ -396,6 +448,7 @@ public class Timeline extends Div {
    * @param newContent new item content
    */
   public void updateItemContent(String itemId, String newContent) {
+    flushPendingAdds();
     this.getElement()
         .executeJs("vcftimeline.updateItemContent($0, $1, $2)", this, itemId, newContent);
     items.stream()
@@ -595,6 +648,7 @@ public class Timeline extends Div {
    * @param item item to be removed.
    */
   public void removeItem(Item item) {
+    flushPendingAdds();
     this.getElement().executeJs("vcftimeline.removeItem($0, $1)", this, item.getId());
   }
 

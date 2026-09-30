@@ -32,11 +32,13 @@ public class MainLayout extends AppLayout {
         new RouterLink("Grouped items", GroupedItemsExample.class);
     final RouterLink syncedRowsExample =
         new RouterLink("Grouped rows with side components", SyncedRowsExample.class);
+    final RouterLink addItemsRaceExample =
+        new RouterLink("Add items before attach", AddItemsRaceExample.class);
 
     final VerticalLayout menuLayout = new VerticalLayout(readonlyEmptyExample, addEmptyItemsExample,
         resizeItems, dndItems, tooltipsExample, classNameExample, readonlyExample,
         updateItemContentExample, zoomOptionsExample, overlappExample, tooltipOnUpdateExample,
-        groupedItemsExample);
+        groupedItemsExample, syncedRowsExample, addItemsRaceExample);
     addToDrawer(menuLayout);
     addToNavbar(drawerToggle);
   }

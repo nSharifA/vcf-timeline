@@ -53,3 +53,6 @@ vcf-timeline-demo/frontend/generated
 vcf-timeline-demo/frontend/index.html
 vcf-timeline-demo/src/main/bundles
 
+# vis-test harness: third-party vis-timeline bundles stay local (re-downloadable)
+vis-test/libs/
+

@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>vis standalone repro</title>
+<link rel="stylesheet" id="vtcss" href="/vcf-timeline-demo/node_modules/vis-timeline/styles/vis-timeline-graph2d.min.css">
+<style>
+  /* mirror of synced-rows.css left-panel hiding + demo layout, applied via ?hideleft=1 */
+  .hideleft .vis-panel.vis-left { display: none !important; }
+  body { font: 14px system-ui; margin: 16px; }
+</style>
+</head>
+<body>
+<div id="tl" style="width:100%"></div>
+<script>
+// ?ver=X.Y.Z loads vis-test/libs/vt-X.Y.Z.{js,css} instead of the node_modules 7.4.9 build
+const q = new URLSearchParams(location.search);
+const ver = q.get('ver');
+if (ver) {
+  document.write('<link rel="stylesheet" href="/vis-test/libs/vt-' + ver + '.css">');
+  document.write('<script src="/vis-test/libs/vt-' + ver + '.js"><\/script>');
+} else {
+  document.write('<script src="/vcf-timeline-demo/node_modules/vis-timeline/standalone/umd/vis-timeline-graph2d.min.js"><\/script>');
+}
+</script>
+<script>
+const DAY = '2021-08-11T00:00:00';
+function iso(h, m) {
+  const d = new Date(Date.UTC(2021, 7, 11, 0, 0, 0));
+  return d; // items with JS Dates, like the connector sends (epoch millis via ISO)
+}
+function mkItem(id, group, h1, m1, h2, m2, content) {
+  const s = new Date(2021, 7, 11, h1, m1);
+  const e = new Date(2021, 7, 11 + (h2 >= 24 ? 1 : 0), h2 % 24, m2);
+  return { id, start: s, end: e, content, group };
+}
+const groups = [
+  { id: '1', content: 'Team A', order: 1 },
+  { id: '2', content: 'Team B', order: 2 },
+  { id: '3', content: 'Team C', order: 3 },
+  { id: '4', content: 'Team D', order: 4 },
+  { id: '5', content: 'Team E', order: 5 },
+];
+const items = [
+  mkItem('n1', '1', 8, 0, 16, 0, 'Day shift'),
+  mkItem('c1', '2', 6, 0, 14, 0, 'Morning'),
+  mkItem('c2', '2', 14, 0, 22, 0, 'Evening'),
+  mkItem('s1', '3', 9, 0, 12, 0, 'Task A'),
+  mkItem('s2', '3', 15, 0, 18, 0, 'Task B'),
+  mkItem('p1', '4', 0, 0, 8, 0, 'Night shift'),
+  mkItem('w1', '5', 20, 0, 24, 0, 'On call'),
+];
+window.__log = [];
+function snap(tag) {
+  const tl = document.getElementById('tl');
+  const rows = [...tl.querySelectorAll('.vis-foreground .vis-group')].map(g => g.style.height + '/' + Math.round(g.getBoundingClientRect().height));
+  const w = window.__tl ? window.__tl.getWindow() : null;
+  window.__log.push({
+    tag, ms: Math.round(performance.now()),
+    root: Math.round(tl.querySelector('.vis-timeline')?.getBoundingClientRect().height || 0),
+    rows,
+    win: w ? [w.start.toString().slice(0,21), w.end.toString().slice(0,21)] : null,
+  });
+}
+window.__samples = [];
+const t0 = performance.now();
+setInterval(() => {
+  const tl = document.getElementById('tl');
+  if (!tl.querySelector('.vis-timeline')) return;
+  snap('interval');
+  window.__samples.push({
+    ms: Math.round(performance.now() - t0),
+    rows: [...tl.querySelectorAll('.vis-foreground .vis-group')].map(g => g.style.height + '/' + Math.round(g.getBoundingClientRect().height)),
+    win: window.__tl ? (() => { const w = window.__tl.getWindow(); return [w.start.toISOString().slice(0,10), w.end.toISOString().slice(0,10)]; })() : null,
+  });
+}, 250);
+
+function build() {
+  const hideleft = q.get('hideleft') === '1';
+  if (hideleft) document.body.classList.add('hideleft');
+  snap('before-new');
+  const options = {
+    orientation: { axis: 'top', item: 'top' },
+    zoomMin: 10, zoomMax: 315360000000000,
+    moveable: true, zoomable: true, selectable: true, editable: false,
+    showCurrentTime: false, width: '100%',
+    min: new Date(2021, 7, 10), max: new Date(2021, 7, 15),
+    stack: true, multiselect: false, showTooltips: true, autoZoom: false,
+    groupOrder: 'order', tooltipOnItemUpdateTime: false,
+    snap: function (date, scale, step) { var hour = 15 * 60 * 1000; return Math.round(date / hour) * hour; },
+  };
+  const t = new vis.Timeline(document.getElementById('tl'),
+      new vis.DataSet(items), new vis.DataSet(groups), options);
+  window.__tl = t;
+  snap('after-new');
+  t.on('changed', () => snap('changed'));
+  t.on('rangechange', () => snap('rangechange'));
+  t.on('_change', (p) => snap('_change' + JSON.stringify(p)));
+  t.on('rangechange', () => snap('rangechange2'));
+  window.addEventListener('resize', () => snap('win-resize'));
+  const origRAF = window.requestAnimationFrame;
+}
+const mode = q.get('mode') || 'sync';
+const fix = q.get('fix') || '';
+const _build = build;
+build = function () {
+  _build();
+  const t = window.__tl;
+  if (fix === '1') setTimeout(() => { snap('fix-redraw'); t.redraw(); }, 0);
+  if (fix === '2') requestAnimationFrame(() => requestAnimationFrame(() => { snap('fix-raf2'); t.redraw(); }));
+  if (fix === '3') setTimeout(() => { snap('fix-t50'); t.redraw(); }, 50);
+  if (fix === '4') t.on('changed', () => {
+    if (t.__fix4) return; t.__fix4 = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      t.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+      snap('fix4-redraw'); t.redraw();
+    }));
+  });
+};
+if (mode === 'sync') build();
+else window.addEventListener('load', () => setTimeout(build, 0));
+</script>
+</body>
+</html>

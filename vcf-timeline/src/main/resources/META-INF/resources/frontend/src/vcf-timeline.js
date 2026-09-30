@@ -83,6 +83,9 @@ window.vcftimeline = {
 		mouseX = properties.event.clientX;
 	  });
 
+	  // Replay server calls that arrived during the deferred constructor
+	  this._flushPendingCalls(container);
+
 	  setInterval(function(){
 		var isDragging = container.timeline._timeline.itemSet.touchParams.itemIsDragging;
 		var isResizingRight = container.timeline._timeline.itemSet.touchParams.dragRightItem;
@@ -294,14 +297,71 @@ window.vcftimeline = {
 	},
 
   	addItem: function(container, newItemJson) {
-		container.timeline._timeline.itemsData.add(JSON.parse(newItemJson));
+		this.addItems(container, "[" + newItemJson + "]");
+	},
+
+	// Batched counterpart of addItem: ONE executeJs per server round trip's
+	// worth of adds (the server buffers addItem() calls and flushes them here),
+	// with a single fit() at the end. The per-item variant fitted per item,
+	// and each fit() triggers a full redraw: a 25-row x 7-item load measured
+	// 75 redraw storms (~1.7s of _origRedraw) where this path needs ~25.
+	addItems: function(container, itemsJson) {
+		if (this._queuePreCreate(container, 'addItems', [itemsJson])) {
+			return;
+		}
+		var itemsData = container.timeline._timeline.itemsData;
+		// Items added before create() also ride in its itemsJson (the server
+		// keeps the item list and create() carries it), so the queue replay
+		// must not duplicate what the constructor already placed: add only
+		// the ids that are not in the DataSet yet.
+		var existing = new Set(itemsData.getIds());
+		JSON.parse(itemsJson).forEach(function(item) {
+			if (item.id == undefined || !existing.has(item.id)) {
+				itemsData.add(item);
+				existing.add(item.id);
+			}
+		});
 		container.timeline._timeline.fit();
 	},
 
 	setItems: function(container, itemsJson) {
+		if (this._queuePreCreate(container, 'setItems', [itemsJson])) {
+			return;
+		}
 		var items = new DataSet(JSON.parse(itemsJson));
 		container.timeline._timeline.setItems(items);
 		container.timeline._timeline.fit();
+	},
+
+	// create() defers the vis constructor by a setTimeout, so server commands
+	// sent in the same round trip as attach execute while container.timeline
+	// is still undefined and used to throw "reading '_timeline'" — an uncaught
+	// throw aborts the remaining commands of that response. Queue such calls
+	// and replay them once the constructor has run (_flushPendingCalls).
+	// setOptions/setGroups have their own pre-create handling and are not
+	// routed through here.
+	_queuePreCreate: function(container, name, args) {
+		if (container.timeline != undefined && container.timeline._timeline != undefined) {
+			return false;
+		}
+		if (container.pendingCalls == undefined) {
+			container.pendingCalls = [];
+		}
+		container.pendingCalls.push({ name: name, args: args });
+		return true;
+	},
+
+	_flushPendingCalls: function(container) {
+		var pending = container.pendingCalls;
+		if (pending == undefined || pending.length == 0) {
+			return;
+		}
+		// cleared BEFORE replay so calls arriving during it take the live path
+		container.pendingCalls = undefined;
+		var me = this;
+		pending.forEach(function(call) {
+			me[call.name].apply(me, [container].concat(call.args));
+		});
 	},
 
 	setGroups: function(container, groupsJson) {
@@ -331,11 +391,17 @@ window.vcftimeline = {
 	},
 	
 	removeItem: function(container, itemId) {
+		if (this._queuePreCreate(container, 'removeItem', [itemId])) {
+			return;
+		}
 		container.timeline._timeline.itemsData.remove(itemId);
 		container.$server.onRemove(itemId);
 	},
 
 	updateItemContent: function(container, itemId, newContent) {
+		if (this._queuePreCreate(container, 'updateItemContent', [itemId, newContent])) {
+			return;
+		}
 		var itemData = container.timeline._timeline.itemSet.items[itemId].data;
 		itemData.content = newContent;
 		container.timeline._timeline.itemsData.update(itemData);

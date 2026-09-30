@@ -1,0 +1,343 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>vis repro mimicking the real app (problem.html)</title>
+<script>
+const q = new URLSearchParams(location.search);
+const ver = q.get('ver') || '7.4.9';
+document.write('<link rel="stylesheet" href="/vis-test/libs/vt-' + ver + '.css">');
+document.write('<script src="/vis-test/libs/vt-' + ver + '.js"><\/script>');
+</script>
+<style>
+  body { font: 14px system-ui; margin: 0; }
+  /* mimic problem.html: row = [sticky 100px cell | timeline] in a wide grid,
+     inside an overflow:auto wrapper; vis left panel hidden (app draws its own) */
+  .row-outer { overflow: auto; flex-grow: 1; }
+  .row-grid { display: grid; grid-template-columns: 100px var(--w, 6000px); width: max-content; align-items: stretch; }
+  .cell { padding: 4px; position: sticky; left: 0; background: #fff; border-right: 1px solid #ccc; z-index: 2; }
+  .timeline { width: 100%; position: relative; }
+  .timeline .vis-panel.vis-left { display: none !important; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<script>
+const N = Number(q.get('n') || 4);            // timelines per page
+const W = q.get('w') || '6000px';             // grid width like the app (15360px)
+const fix = q.get('fix') || 'current';        // current | none | redrawnow | origredraw | twice | brk
+const NG = q.get('ng') === '1';               // ungrouped mode: the real app's failure mode
+const heal = q.get('heal') !== 'off';         // arm the ungrouped _ensureFrozenHeight healer
+const early = q.get('early') === '1';         // fire addItems during the deferred create
+if (q.get('zoom')) document.documentElement.style.zoom = q.get('zoom');
+document.getElementById('wrap').style.setProperty('--w', W);
+
+const rows = [];
+for (let i = 0; i < N; i++) {
+  const row = document.createElement('div');
+  row.className = 'row-outer';
+  const grid = document.createElement('div');
+  grid.className = 'row-grid';
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.textContent = 'Person ' + i;
+  const tl = document.createElement('div');
+  tl.className = 'timeline';
+  tl.id = 'tl' + i;
+  grid.append(cell, tl);
+  row.appendChild(grid);
+  document.getElementById('wrap').appendChild(row);
+  rows.push(tl);
+}
+
+const DAY = new Date(2021, 7, 11);
+function mk(id, h, content) {
+  return { id, group: '1', start: new Date(2021, 7, 11, h, 0), end: new Date(2021, 7, 11 + (h >= 12 ? 0 : 0), (h + 8) % 24, 0), content };
+}
+const items = [mk('a', 8), mk('b', 12), mk('c', 0), mk('d', 16)];
+// spread over a wide range like the app (~256 days wide). In grouped mode all
+// items share the one group; in NG mode durations are widened so consecutive
+// items overlap — without overlap nothing ever stacks and the too-early
+// freeze would measure the final (correct) height, hiding the race.
+const wide = [];
+for (let d = 0; d < 60; d++) {
+  wide.push(NG
+    ? { id: 'w' + d, start: new Date(2021, 6, 1 + d, 0), end: new Date(2021, 6, 3 + d, 0), content: 'day' + d }
+    : { id: 'w' + d, group: '1', start: new Date(2021, 6, 1 + d, 9), end: new Date(2021, 6, 1 + d, 17), content: 'day' + d });
+}
+const groups = NG ? [] : [{ id: '1', content: 'R' }];
+
+window.__log = [];
+function snap(tl, tag) {
+  const root = tl.querySelector('.vis-timeline');
+  if (!root) return;
+  window.__log.push({
+    id: tl.id, tag, ms: Math.round(performance.now()),
+    root: Math.round(root.getBoundingClientRect().height * 100) / 100,
+    centerC: (root.querySelector('.vis-panel.vis-center').style.height || ''),
+    itemset: (root.querySelector('.vis-itemset').style.height || ''),
+    fg: [...root.querySelectorAll('.vis-foreground .vis-group')].map(g => g.style.height).join(','),
+  });
+}
+window.__samples = {};
+window.__trans = [];
+setInterval(() => {
+  for (const tl of rows) {
+    const last = window.__samples[tl.id];
+    const s = snapProbe(tl);
+    if (!s) continue;
+    const cur = JSON.stringify([s.root, s.itemset, s.fg]);
+    if (cur !== last) { window.__samples[tl.id] = cur; window.__trans.push(s); }
+  }
+}, 250);
+function snapProbe(tl) {
+  const root = tl.querySelector('.vis-timeline');
+  if (!root) return null;
+  return {
+    ms: Math.round(performance.now()), id: tl.id,
+    root: Math.round(root.getBoundingClientRect().height),
+    itemset: (root.querySelector('.vis-itemset').style.height || ''),
+    fg: [...root.querySelectorAll('.vis-foreground .vis-group')].map(g => g.style.height).join(','),
+  };
+}
+
+// ---- mimic of the vcf-timeline connector ----
+window.vcftimeline = {
+  create: function (container, itemsJson, groupsJson, optionsJson) {
+    setTimeout(() => this._createTimeline(container, itemsJson, groupsJson, optionsJson));
+  },
+  _createTimeline: function (container, itemsJson, groupsJson, optionsJson) {
+    var parsedItems = JSON.parse(itemsJson);
+    var items = new vis.DataSet(parsedItems);
+    var groups = new vis.DataSet(JSON.parse(groupsJson));
+    container.groupsDataSet = groups;
+    var options = JSON.parse(optionsJson);
+    // same as the connector: an empty groups set must not reach the
+    // constructor, or ungrouped items would never be placed
+    var timeline = groups.getIds().length > 0
+      ? new vis.Timeline(container, items, groups, options)
+      : new vis.Timeline(container, items, options);
+    container.timeline = { _timeline: timeline };
+
+    container.timeline._timeline.on("changed", () => {
+      const w = timeline.getWindow();
+      window.__log.push({ id: container.id, tag: 'changed', ms: Math.round(performance.now()),
+        root: Math.round(timeline.dom.root.getBoundingClientRect().height * 100) / 100,
+        centerC: timeline.dom.centerContainer.style.height, itemset: timeline.itemSet.dom.frame.style.height,
+        fg: [...timeline.itemSet.dom.foreground.childNodes].map(g => g.style.height).join(','),
+        win: w.start.toISOString().slice(0, 10) + '..' + w.end.toISOString().slice(0, 10) });
+      this._updateTimelineHeight(container);
+      if (fix === 'none') return;
+      this._restackInitialGroupRows(container);
+    });
+    for (const ev of ['rangechange', 'rangechanged']) {
+      container.timeline._timeline.on(ev, () => {
+        const w = timeline.getWindow();
+        window.__log.push({ id: container.id, tag: ev, ms: Math.round(performance.now()),
+          root: 0, centerC: '', itemset: '', win: w.start.toISOString().slice(0, 10) + '..' + w.end.toISOString().slice(0, 10) });
+      });
+    }
+
+    if (NG && fix === 'ngbrk') {
+      // deterministic stand-in for the lost race (server push in the app):
+      // run the height freeze NOW, while the layout is still the pre-fit /
+      // pre-stacking one, exactly like a first changed event that lands too
+      // early. heal=off then keeps the collapse; the healer heals it.
+      window.vcftimeline._updateTimelineHeight(container);
+    }
+
+    // server calls that arrived during the deferred constructor (see early=1)
+    this._flushPendingCalls(container);
+  },
+  // ---- verbatim from vcf-timeline.js: pre-create call queue + batched adds ----
+  addItems: function (container, itemsJson) {
+    if (this._queuePreCreate(container, 'addItems', [itemsJson])) return;
+    var itemsData = container.timeline._timeline.itemsData;
+    var existing = new Set(itemsData.getIds());
+    JSON.parse(itemsJson).forEach(function (item) {
+      if (item.id == undefined || !existing.has(item.id)) {
+        itemsData.add(item);
+        existing.add(item.id);
+      }
+    });
+    container.timeline._timeline.fit();
+  },
+  _queuePreCreate: function (container, name, args) {
+    if (container.timeline != undefined && container.timeline._timeline != undefined) return false;
+    if (container.pendingCalls == undefined) container.pendingCalls = [];
+    container.pendingCalls.push({ name: name, args: args });
+    return true;
+  },
+  _flushPendingCalls: function (container) {
+    var pending = container.pendingCalls;
+    if (pending == undefined || pending.length == 0) return;
+    container.pendingCalls = undefined;
+    var me = this;
+    pending.forEach(function (call) { me[call.name].apply(me, [container].concat(call.args)); });
+  },
+  _updateTimelineHeight: function (container) {
+    // verbatim from vcf-timeline.js
+    if (container.groupsDataSet != undefined && container.groupsDataSet.getIds().length > 0) {
+      if (container.timelineHeight != undefined
+          && container.timeline._timeline.options.height == container.timelineHeight) {
+        container.timeline._timeline.options.height = undefined;
+        container.timeline._timeline.redraw();
+      }
+      container.timelineHeight = undefined;
+      return;
+    }
+    if (container.timelineHeight == undefined) {
+      container.timelineHeight = container.timeline._timeline.dom.container.getBoundingClientRect().height;
+    }
+    if (container.timeline._timeline.options.height == undefined) {
+      container.timeline._timeline.options.height = container.timelineHeight;
+    }
+    // verbatim from vcf-timeline.js (gated by heal=off to reproduce the bug)
+    if (heal && container.frozenHeightChecked == undefined) {
+      container.frozenHeightChecked = true;
+      var me = this;
+      var timeline = container.timeline._timeline;
+      var deadline = Date.now() + 2500;
+      requestAnimationFrame(function () {
+        me._ensureFrozenHeight(container, timeline, deadline);
+      });
+    }
+  },
+  _ensureFrozenHeight: function (container, timeline, deadline) {
+    // verbatim from vcf-timeline.js
+    if (!container.timeline || container.timeline._timeline !== timeline) return;
+    if (!timeline.dom.centerContainer.isConnected) return;
+    if (!timeline.options.verticalScroll) {
+      var frame = timeline.itemSet != undefined ? timeline.itemSet.dom.frame : undefined;
+      var stale = frame != undefined
+        && container.timelineHeight != undefined
+        && timeline.options.height == container.timelineHeight
+        && frame.offsetHeight > timeline.dom.centerContainer.clientHeight + 1;
+      if (stale) {
+        container.timelineHeight = undefined;
+        timeline.options.height = undefined;
+        timeline.redraw();
+        window.__log.push({ id: container.id, tag: 'frozenheal', ms: Math.round(performance.now()),
+          root: Math.round(timeline.dom.root.getBoundingClientRect().height), centerC: '', itemset: '',
+          win: '' });
+      }
+    }
+    if (Date.now() < deadline) {
+      var me = this;
+      setTimeout(function () { me._ensureFrozenHeight(container, timeline, deadline); }, 150);
+    }
+  },
+  _restackInitialGroupRows: function (container) {
+    if (container.initialGroupRowsRestacked != undefined) return;
+    if (container.groupsDataSet == undefined || container.groupsDataSet.getIds().length == 0) return;
+    container.initialGroupRowsRestacked = true;
+    var timeline = container.timeline._timeline;
+    if (container.id === 'tl0') {
+      const w = timeline.getWindow();
+      window.__log.push({ id: 'tl0', tag: 'fixarm', ms: Math.round(performance.now()), root: 0, centerC: '', itemset: '',
+        win: w.start.toISOString().slice(0, 10) + '..' + w.end.toISOString().slice(0, 10) });
+    }
+    if (fix === 'brk' || fix === 'brknone') {
+      // reproduce the frozen state from the app's problem.html dump: vis's
+      // _change follow-up chain dies (redrawCount beyond MAX_REDRAW=5), so the
+      // restack below grows .vis-itemset but the stale center-panel height
+      // stays baked into the root element. brk lets the connector's
+      // _ensureInitialMainHeight heal it; brknone leaves it collapsed.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        timeline.redrawCount = 99;
+        timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+        timeline.redraw();
+        if (fix === 'brk') this._ensureInitialMainHeight(container, timeline, 0);
+      }));
+      return;
+    }
+    if (fix === 'redrawnow') { timeline.redraw(); return; }
+    if (fix === 'origredraw') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+        timeline._origRedraw();
+      }));
+      return;
+    }
+    if (fix === 'twice') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+        timeline.redraw();
+      }));
+      requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+        timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+        timeline.redraw();
+      }))));
+      return;
+    }
+    // 'current': verbatim from vcf-timeline.js (post-fix)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (container.timeline && container.timeline._timeline === timeline) {
+        timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+        timeline.redraw();
+        this._ensureInitialMainHeight(container, timeline, 0);
+      }
+    }));
+  },
+  _ensureInitialMainHeight: function (container, timeline, attempts) {
+    // verbatim from vcf-timeline.js, plus an observability log line
+    if (attempts > 15) return;
+    if (!container.timeline || container.timeline._timeline !== timeline) return;
+    if (!timeline.dom.centerContainer.isConnected) return;
+    if (timeline.options.height != undefined || timeline.options.verticalScroll) return;
+    var broken = attempts == 0;
+    if (!broken) {
+      var groupHeight = 0;
+      timeline.itemSet.groupIds.forEach(function (id) {
+        var group = timeline.itemSet.groups[id];
+        if (group != undefined) groupHeight += group.height;
+      });
+      broken = groupHeight > timeline.dom.centerContainer.clientHeight + 1;
+    }
+    if (broken) {
+      const w = timeline.getWindow();
+      window.__log.push({ id: container.id, tag: 'ens' + attempts, ms: Math.round(performance.now()),
+        root: Math.round(timeline.dom.root.getBoundingClientRect().height * 100) / 100,
+        centerC: timeline.dom.centerContainer.style.height, itemset: timeline.itemSet.dom.frame.style.height,
+        fg: [...timeline.itemSet.dom.foreground.childNodes].map(g => g.style.height).join(','),
+        win: w.start.toISOString().slice(0, 10) + '..' + w.end.toISOString().slice(0, 10) });
+      timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+      timeline.redraw();
+      var me = this;
+      setTimeout(function () { me._ensureInitialMainHeight(container, timeline, attempts + 1); }, 150);
+    }
+  },
+};
+
+const options = JSON.stringify({
+  orientation: { axis: 'top', item: 'bottom' },
+  zoomMin: 10, zoomMax: 315360000000000,
+  moveable: true, zoomable: true, selectable: true, editable: false,
+  showCurrentTime: false, width: '100%',
+  min: new Date(2021, 5, 20), max: new Date(2022, 2, 20),
+  stack: true, multiselect: false, showTooltips: true,
+  groupOrder: 'order',
+});
+for (const tl of rows) {
+  vcftimeline.create(tl, JSON.stringify(wide), JSON.stringify(groups), options);
+}
+if (early) {
+  // simulate the server's batched addItems flush landing while the deferred
+  // constructor is still pending: two items whose ids the constructor carries
+  // anyway (dedupe path; content must NOT overwrite the constructor's copy)
+  // plus one genuinely new item.
+  rows.forEach((tl, i) => {
+    const dup = [
+      { id: 'w0', content: 'SHOULD-NOT-APPEAR', start: new Date(2021, 6, 1, 9), end: new Date(2021, 6, 1, 17) },
+      { id: 'w1', content: 'SHOULD-NOT-APPEAR', start: new Date(2021, 6, 2, 9), end: new Date(2021, 6, 2, 17) },
+    ];
+    if (!NG) dup.forEach((d) => (d.group = '1'));
+    const fresh = { id: 'x' + i, start: new Date(2021, 7, 11, 6), end: new Date(2021, 7, 11, 8), content: 'extra' + i };
+    if (!NG) fresh.group = '1';
+    vcftimeline.addItems(tl, JSON.stringify([...dup, fresh]));
+  });
+}
+window.__expected = { ids: wide.length + (early ? 1 : 0), early: early };
+</script>
+</body>
+</html>

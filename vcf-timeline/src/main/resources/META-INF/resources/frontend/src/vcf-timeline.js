@@ -442,6 +442,11 @@ window.vcftimeline = {
 			if(container.timelineHeight != undefined
 					&& container.timeline._timeline.options.height == container.timelineHeight){
 				container.timeline._timeline.options.height = undefined;
+				// Clearing the option is not enough: vis only re-reads it at the
+				// start of a redraw, and the changed event we are running in fires
+				// after that redraw — without another one the height-freeze would
+				// stay in effect on screen until some later, unrelated redraw.
+				container.timeline._timeline.redraw();
 			}
 			container.timelineHeight = undefined;
 			return;
@@ -465,6 +470,10 @@ window.vcftimeline = {
 	// that redraw once, on the frame after the first changed event: vis's
 	// internal initial fit is handled in the constructor, i.e. before the
 	// changed handler below runs, so by then the window is already final.
+	//
+	// One forced redraw is not always enough, see _ensureInitialMainHeight
+	// below; that retry covers the case where the rows do restack but the
+	// main panel stays at its collapsed height anyway.
 	_restackInitialGroupRows: function(container) {
 		if (container.initialGroupRowsRestacked != undefined) {
 			return;
@@ -478,8 +487,62 @@ window.vcftimeline = {
 			if (container.timeline && container.timeline._timeline === timeline) {
 				timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
 				timeline.redraw();
+				this._ensureInitialMainHeight(container, timeline, 0);
 			}
 		}));
+	},
+
+	// The other half of the refresh-collapse bug: .vis-itemset ends up at its
+	// correct (stacked) height while .vis-panel.vis-center keeps the collapsed
+	// height, so the rows render clipped inside a 30px-tall box. That state is
+	// what vis leaves behind when its auto-height bookkeeping runs out of
+	// steam: Core._redraw measures the center panel BEFORE redrawing the
+	// components, so a redraw whose own restack grows the rows writes the
+	// PREVIOUS pass' height into the root element and then relies on vis's
+	// internal _change loop to schedule yet another pass that measures the
+	// grown content. That follow-up loop can end without one: its redraws go
+	// through a throttled wrapper whose calls during the initial event storm
+	// get dropped, and after MAX_REDRAW=5 chained passes vis gives up with a
+	// console warning "infinite loop in redraw?". vis fires no event for
+	// "loop finished", so instead we verify the outcome ourselves: while the
+	// group rows total more height than the main panel offers, force one more
+	// full redraw, timed outside vis's throttle window. The first attempt is
+	// unconditional because vis empties itemSet.groupIds in markDirty, so a
+	// row-total of 0 after a swallowed restack cannot be told apart from an
+	// unstacked layout; from the second attempt on the row-total check is
+	// meaningful and a healthy load stops right there. Bounded either way.
+	_ensureInitialMainHeight: function(container, timeline, attempts) {
+		if (attempts > 15) {
+			return; // give up rather than risk redraw churn on a pathological layout
+		}
+		if (!container.timeline || container.timeline._timeline !== timeline) {
+			return; // timeline destroyed or rebuilt in the meantime
+		}
+		if (!timeline.dom.centerContainer.isConnected) {
+			return; // detached from the page
+		}
+		if (timeline.options.height != undefined || timeline.options.verticalScroll) {
+			return; // explicitly sized / scrollable: the panel need not fit the rows
+		}
+		var broken = attempts == 0; // see comment above
+		if (!broken) {
+			var groupHeight = 0;
+			timeline.itemSet.groupIds.forEach(function(id) {
+				var group = timeline.itemSet.groups[id];
+				if (group != undefined) {
+					groupHeight += group.height;
+				}
+			});
+			broken = groupHeight > timeline.dom.centerContainer.clientHeight + 1;
+		}
+		if (broken) {
+			timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+			timeline.redraw();
+			var me = this;
+			setTimeout(function() {
+				me._ensureInitialMainHeight(container, timeline, attempts + 1);
+			}, 150);
+		}
 	}
 }
 

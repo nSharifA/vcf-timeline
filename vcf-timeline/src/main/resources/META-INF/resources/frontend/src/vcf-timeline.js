@@ -71,6 +71,7 @@ window.vcftimeline = {
 		  this._updateConnections(container);
 		}
 		this._updateTimelineHeight(container);
+		this._restackInitialGroupRows(container);
 	  });
 
 	  container.timeline._timeline.on('select', (properties) => {
@@ -451,6 +452,34 @@ window.vcftimeline = {
 		if(container.timeline._timeline.options.height == undefined){
 			container.timeline._timeline.options.height = container.timelineHeight;
 		}
+	},
+
+	// Grouped timelines could start out with collapsed .vis-group rows after a
+	// browser refresh: vis lays the rows out during the constructor's first
+	// draw, which runs against its default window ("around now"); the initial
+	// fit then only moves the range, and the follow-up redraw restacks the
+	// items but not the group rows. The rows only restack on the next FULL
+	// redraw — on a first navigation one happens to come from the container
+	// settling (scrollbar), but after a refresh the layout is already stable
+	// and it never comes, so the rows keep their empty-window heights. Force
+	// that redraw once, on the frame after the first changed event: vis's
+	// internal initial fit is handled in the constructor, i.e. before the
+	// changed handler below runs, so by then the window is already final.
+	_restackInitialGroupRows: function(container) {
+		if (container.initialGroupRowsRestacked != undefined) {
+			return;
+		}
+		if (container.groupsDataSet == undefined || container.groupsDataSet.getIds().length == 0) {
+			return; // ungrouped: nothing to restack; stay armed in case groups arrive later
+		}
+		container.initialGroupRowsRestacked = true;
+		var timeline = container.timeline._timeline;
+		requestAnimationFrame(() => requestAnimationFrame(() => {
+			if (container.timeline && container.timeline._timeline === timeline) {
+				timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
+				timeline.redraw();
+			}
+		}));
 	}
 }
 

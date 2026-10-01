@@ -41,7 +41,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -478,6 +480,65 @@ public class Timeline extends Div {
    */
   public void setZoomOption(Integer zoomOption) {
     this.getElement().executeJs("vcftimeline.setZoomOption($0, $1)", this, zoomOption);
+    updateTimelineOptions();
+  }
+
+  /**
+   * Sets the locale used to localize the timeline axis and tooltip dates, e.g.
+   * "hu" for Hungarian. Month and day names are resolved on the client from the
+   * moment.js locale data registered for that language: the languages bundled
+   * with vis-timeline (en, de, es, fr, it, ja, nl, pl, ru, uk) work out of the
+   * box, any other language requires the matching "moment/locale/&lt;lang&gt;"
+   * module to be imported in the application frontend (see the demo's locale
+   * example). Note that moment.js locales are global: all timelines on the same
+   * page share the last locale set. Defaults to English.
+   *
+   * @param locale IETF language tag, or null to revert to English
+   */
+  public void setLocale(String locale) {
+    TimelineOptions options = getTimelineOptions();
+    options.locale = locale;
+    // Custom UI strings belong to the locale they were written for; drop
+    // them so a new locale doesn't render the previous language's labels.
+    options.localeStrings = null;
+    updateTimelineOptions();
+  }
+
+  /**
+   * Sets the locale used to localize the timeline axis and tooltip dates, see
+   * {@link #setLocale(String)}.
+   *
+   * @param locale locale to use, or null to revert to English
+   */
+  public void setLocale(Locale locale) {
+    setLocale(locale == null ? null : locale.toLanguageTag());
+  }
+
+  /**
+   * Sets the UI strings displayed by the timeline itself (the current time
+   * indicator label, the tooltip time label and the delete button caption),
+   * for languages vis-timeline ships no built-in strings for. They are used
+   * when the locale set via {@link #setLocale(String)} has no built-in entry.
+   *
+   * @param current
+   *            current time indicator label, e.g. "aktuális"
+   * @param time
+   *            label used in the current time tooltip, e.g. "idő"
+   * @param deleteSelected
+   *            caption of the delete button, e.g. "Kijelölés törlése"
+   */
+  public void setLocaleStrings(String current, String time, String deleteSelected) {
+    Map<String, String> strings = new LinkedHashMap<>();
+    if (current != null) {
+      strings.put("current", current);
+    }
+    if (time != null) {
+      strings.put("time", time);
+    }
+    if (deleteSelected != null) {
+      strings.put("deleteSelected", deleteSelected);
+    }
+    getTimelineOptions().localeStrings = strings;
     updateTimelineOptions();
   }
 

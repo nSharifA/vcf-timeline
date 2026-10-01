@@ -25,6 +25,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -114,6 +115,16 @@ public class TimelineOptions {
   
   public String tooltipOnItemUpdateTimeTemplate;
 
+  /* IETF language tag used to localize axis dates and tooltips, e.g. "hu".
+   * Month and day names come from the moment.js locale data loaded on the
+   * client side, not from this option. */
+  public String locale;
+
+  /* UI strings shown by the timeline itself, keyed by "current", "time" and
+   * "deleteSelected". Used together with locale for languages that vis-timeline
+   * does not ship built-in strings for. */
+  public Map<String, String> localeStrings;
+
   public String toJSON() {
     ObjectNode js = JsonNodeFactory.instance.objectNode();
     Optional.ofNullable(min).ifPresent(v -> js.put("min", v.toString()));
@@ -147,6 +158,13 @@ public class TimelineOptions {
     js.put("tooltipOnItemUpdateTime", tooltipOnItemUpdateTime);
     Optional.ofNullable(tooltipOnItemUpdateTimeDateFormat).ifPresent(v -> js.put("tooltipOnItemUpdateTimeDateFormat", v.toString()));
     Optional.ofNullable(tooltipOnItemUpdateTimeTemplate).ifPresent(v -> js.put("tooltipOnItemUpdateTimeTemplate", v.toString()));
+
+    Optional.ofNullable(locale).ifPresent(v -> js.put("locale", v));
+    Optional.ofNullable(localeStrings).ifPresent(v -> {
+      ObjectNode localeStringsJs = JsonNodeFactory.instance.objectNode();
+      v.forEach(localeStringsJs::put);
+      js.set("localeStrings", localeStringsJs);
+    });
 
     return js.toString();
   }

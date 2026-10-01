@@ -20,7 +20,7 @@
 import Arrow from './arrow.js';
 import moment from 'moment';
 
-import { DataSet, Timeline } from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js';
+import { DataSet, Timeline, moment as visMoment } from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js';
 
 window.vcftimeline = {
 
@@ -211,7 +211,13 @@ window.vcftimeline = {
 	  var tooltipTemplate = parsedOptions.tooltipOnItemUpdateTimeTemplate;
 	  delete parsedOptions.tooltipOnItemUpdateTime;
 	  delete parsedOptions.tooltipOnItemUpdateTimeDateFormat;
-	  delete parsedOptions.tooltipOnItemUpdateTimeTemplate;	 			
+	  delete parsedOptions.tooltipOnItemUpdateTimeTemplate;
+
+	  // `locale` itself IS a vis option (kept for its built-in UI strings);
+	  // localeStrings is wrapper-only and feeds option.locales below.
+	  var locale = parsedOptions.locale;
+	  var localeStrings = parsedOptions.localeStrings;
+	  delete parsedOptions.localeStrings;
 
 	  var defaultOptions = {
 		onMove: function(item, callback) {
@@ -248,6 +254,33 @@ window.vcftimeline = {
 	  var options = {};
 	  Object.assign(options, parsedOptions, defaultOptions);
 
+	  if (locale) {
+		// vis-timeline bundles its own moment with data for its 10 built-in
+		// languages; the npm moment knows every "moment/locale/<lang>" module
+		// the application has imported. Moment's locale is global per copy
+		// (and sticky), so reset it on both copies before applying the new
+		// one, then format axis labels (TimeStep uses options.moment) with
+		// the copy that actually knows the language. One locale per page.
+		visMoment.locale('en');
+		visMoment.locale(locale);
+		moment.locale('en');
+		moment.locale(locale);
+		options.moment = moment.locale() === locale ? moment : visMoment;
+		if (localeStrings) {
+		  options.locales = {};
+		  options.locales[locale] = localeStrings;
+		}
+	  } else {
+		// Revert to English: the global locale of a previously used moment
+		// copy and a previously injected options.moment would otherwise
+		// stick, because vis keeps option keys it isn't given a new value
+		// for.
+		moment.locale('en');
+		visMoment.locale('en');
+		options.moment = visMoment;
+		options.locale = 'en';
+	  }
+
 	  if(autoZoom && options.min && options.max){
 		  options.start = options.min;
 		  options.end = options.max;
@@ -257,12 +290,12 @@ window.vcftimeline = {
 		options.editable = {updateTime: true}, 
 		options.tooltipOnItemUpdateTime = {
 			template: function(item) {
-		      var startDate = moment(item.start).format('MM/DD/YYYY HH:mm');
-			  var endDate = moment(item.end).format('MM/DD/YYYY HH:mm')
+		      var startDate = options.moment(item.start).format('L HH:mm'); // format with the copy the locale block selected
+			  var endDate = options.moment(item.end).format('L HH:mm')
 			  	
 			  if(tooltipDateFormat){
-				startDate = moment(item.start).format(tooltipDateFormat);
-				endDate = moment(item.end).format(tooltipDateFormat);
+				startDate = options.moment(item.start).format(tooltipDateFormat);
+				endDate = options.moment(item.end).format(tooltipDateFormat);
 			  }
 			  if(tooltipTemplate){
 				  var templateCopy = tooltipTemplate;
@@ -287,6 +320,14 @@ window.vcftimeline = {
 				        // stashed above is re-read by _createTimeline's options
 		}
 		container.timeline._timeline.setOptions(options);
+		// Core has propagated the locale-selected moment to all components,
+		// but the axis only repaints when the range changes; make sure it
+		// repaints now, so labels pick up the new language immediately.
+		var tl = container.timeline._timeline;
+		if (options.moment) {
+			if (tl.timeAxis) { tl.timeAxis.options.moment = options.moment; tl.timeAxis.redraw(); }
+			if (tl.timeAxis2) { tl.timeAxis2.options.moment = options.moment; tl.timeAxis2.redraw(); }
+		}
 		// Sync already-drawn arrows with the arrowsEnabled flag _processOptions
 		// just stashed: clear them when disabled, redraw when (re)enabled.
 		if (container.arrowsEnabled) {

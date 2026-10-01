@@ -485,12 +485,16 @@ public class Timeline extends Div {
 
   /**
    * Sets the locale used to localize the timeline axis and tooltip dates, e.g.
-   * "hu" for Hungarian. Month and day names are resolved on the client from the
-   * moment.js locale data registered for that language: the languages bundled
-   * with vis-timeline (en, de, es, fr, it, ja, nl, pl, ru, uk) work out of the
-   * box, any other language requires the matching "moment/locale/&lt;lang&gt;"
-   * module to be imported in the application frontend (see the demo's locale
-   * example). Note that moment.js locales are global: all timelines on the same
+   * "hu" for Hungarian. Month and day names are resolved on the client, in this
+   * order: moment.js locale data the application bundled (the languages
+   * bundled with vis-timeline - en, de, es, fr, it, ja, nl, pl, ru, uk - plus
+   * any "moment/locale/&lt;lang&gt;" module the application imported, see the
+   * demo's locale example), and otherwise from the browser's built-in Intl
+   * (CLDR) data, so any language the browser knows works without frontend
+   * setup. Only language tags the browser itself does not know fall back to
+   * English, with a console warning. The UI strings vis-timeline displays
+   * itself are not covered by locale data; use {@link #setLocaleStrings} for
+   * those. Note that moment.js locales are global: all timelines on the same
    * page share the last locale set. Defaults to English.
    *
    * @param locale IETF language tag, or null to revert to English

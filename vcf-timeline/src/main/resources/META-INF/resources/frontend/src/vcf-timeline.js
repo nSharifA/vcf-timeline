@@ -22,6 +22,111 @@ import moment from 'moment';
 
 import { DataSet, Timeline, moment as visMoment } from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js';
 
+// Locales already reported as unlocalizable (see the locale block in
+// _processOptions). Warn once per locale: with many timelines on a page each
+// setOptions call would otherwise repeat the same warning.
+var _missingLocaleWarned = {};
+
+// Build a moment.js locale from Intl/CLDR data for languages neither bundled
+// moment copy has data for (see the locale block in _processOptions). Only
+// what vis-timeline reads off localeData() is generated — month/weekday
+// names, the L*/LT* date patterns and the week start; the rest of the locale
+// inherits moment's English defaults. Throws for language tags Intl rejects;
+// dayPeriod values (AM/PM) stay approximate as moment can't take them from
+// Intl without per-locale data.
+function _defineLocaleFromIntl(m, locale) {
+  var year = 2021;
+
+  function names(opts, dates) {
+    var fmt = new Intl.DateTimeFormat(locale, opts);
+    return dates.map(function (d) {
+      var out = '';
+      fmt.formatToParts(d).forEach(function (p) {
+        if (p.type === 'month' || p.type === 'weekday') {
+          out += p.value;
+        }
+      });
+      // CLDR short forms carry their own trailing dot ("nov.", "pe."); the
+      // converted patterns emit that dot as a literal, so keep it out of the
+      // arrays or it would render twice.
+      return out.replace(/\.+$/, '');
+    });
+  }
+
+  // Convert an Intl date format into the equivalent moment format string,
+  // keeping each part's order and stuck-on punctuation on its real side
+  // ("5." becomes "D[.]", "nov." becomes "MMM[.]", ".nov." the prefix form).
+  // Month/weekday width isn't visible in the parts, so it is inferred from
+  // the name's length \u2014 good enough for the formats vis actually uses.
+  // Case-inflected CLDR forms (Finnish "marraskuuta") collapse to the
+  // nominative arrays moment's MMMM token reads.
+  function pattern(opts) {
+    var d = new Date(year, 10, 5, 9, 8, 7); // a Friday
+    var out = '';
+    try {
+      new Intl.DateTimeFormat(locale, opts).formatToParts(d).forEach(function (p) {
+        if (p.type === 'literal' || p.type === 'era' || p.type === 'timeZoneName') {
+          out += '[' + p.value + ']';
+          return;
+        }
+        var run = /\d+/.exec(p.value) || /[A-Za-z\u00AA-\uFFFF]+/.exec(p.value);
+        if (!run) {
+          out += '[' + p.value + ']';
+          return;
+        }
+        var pre = p.value.slice(0, run.index);
+        var post = p.value.slice(run.index + run[0].length);
+        var numeric = /\d/.test(run[0]);
+        var token;
+        if (p.type === 'year') { token = run[0].length === 2 ? 'YY' : 'YYYY'; }
+        else if (p.type === 'month') { token = numeric ? (run[0].length > 1 ? 'MM' : 'M') : (run[0].length <= 4 ? 'MMM' : 'MMMM'); }
+        else if (p.type === 'day') { token = numeric && run[0].length > 1 ? 'DD' : 'D'; }
+        else if (p.type === 'weekday') { token = run[0].length <= 2 ? 'ddd' : 'dddd'; }
+        else if (p.type === 'hour') { token = run[0].length > 1 ? 'HH' : 'H'; }
+        else if (p.type === 'minute') { token = 'mm'; }
+        else if (p.type === 'second') { token = 'ss'; }
+        else if (p.type === 'dayPeriod') { token = 'a'; }
+        else { token = '[' + p.value + ']'; }
+        out += (pre ? '[' + pre + ']' : '') + token + (post ? '[' + post + ']' : '');
+      });
+    } catch (e) {
+      return undefined; // engine without dateStyle/timeStyle support
+    }
+    return out;
+  }
+
+  var monthDates = [], weekdayDates = [];
+  for (var mo = 0; mo < 12; mo++) { monthDates.push(new Date(year, mo, 15)); }
+  for (var wd = 0; wd < 7; wd++) { weekdayDates.push(new Date(year, 0, 3 + wd)); } // Jan 3 2021 is a Sunday
+
+  var week = { dow: 0, doy: 4 };
+  try {
+    var wi = new Intl.Locale(locale).weekInfo;
+    if (wi && wi.firstDay) { week = { dow: wi.firstDay % 7, doy: wi.minimalDays }; }
+  } catch (e) {
+  }
+
+  var defined = m.defineLocale(locale, {
+    months: names({ month: 'long' }, monthDates),
+    monthsShort: names({ month: 'short' }, monthDates),
+    weekdays: names({ weekday: 'long' }, weekdayDates),
+    weekdaysShort: names({ weekday: 'short' }, weekdayDates),
+    weekdaysMin: names({ weekday: 'narrow' }, weekdayDates),
+    longDateFormat: {
+      LT: pattern({ timeStyle: 'short' }),
+      LTS: pattern({ timeStyle: 'medium' }),
+      L: pattern({ dateStyle: 'short' }),
+      LL: pattern({ dateStyle: 'medium' }),
+      LLL: pattern({ dateStyle: 'medium', timeStyle: 'short' }),
+      LLLL: pattern({ dateStyle: 'full', timeStyle: 'short' })
+    },
+    week: week
+  });
+  if (!defined) {
+    throw new Error('moment rejected the synthesized "' + locale + '" locale');
+  }
+}
+
 window.vcftimeline = {
 
 	create: function(container, itemsJson, groupsJson, optionsJson) {
@@ -261,11 +366,34 @@ window.vcftimeline = {
 		// (and sticky), so reset it on both copies before applying the new
 		// one, then format axis labels (TimeStep uses options.moment) with
 		// the copy that actually knows the language. One locale per page.
+		// Setting an unknown language returns the fallback instead, so the
+		// return values also tell whether the locale data is there at all.
 		visMoment.locale('en');
-		visMoment.locale(locale);
+		var visLang = visMoment.locale(locale);
 		moment.locale('en');
-		moment.locale(locale);
-		options.moment = moment.locale() === locale ? moment : visMoment;
+		var npmLang = moment.locale(locale);
+		var npmKnown = String(npmLang).toLowerCase() === String(locale).toLowerCase();
+		var visKnown = String(visLang).toLowerCase() === String(locale).toLowerCase();
+		if (!npmKnown && !visKnown) {
+		  // The application imported no moment data for this language: build
+		  // one from the browser's Intl (CLDR) data rather than render English
+		  // silently. An imported "moment/locale/<lang>" module stays the more
+		  // exact source when present.
+		  try {
+		    _defineLocaleFromIntl(moment, locale);
+		    npmLang = moment.locale(locale);
+		    npmKnown = String(npmLang).toLowerCase() === String(locale).toLowerCase();
+		  } catch (e) {
+		    // Language tag Intl rejects: fall through to the warning.
+		  }
+		  if (!npmKnown && !_missingLocaleWarned[locale]) {
+		    _missingLocaleWarned[locale] = true;
+		    console.warn('[vcf-timeline] cannot localize "' + locale + '": neither an imported'
+			    + ' "moment/locale/' + locale + '" module nor the browser\'s Intl data knows that'
+			    + ' language tag; dates render in English.');
+		  }
+		}
+		options.moment = npmKnown ? moment : visMoment;
 		if (localeStrings) {
 		  options.locales = {};
 		  options.locales[locale] = localeStrings;

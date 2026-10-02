@@ -491,8 +491,11 @@ public class Timeline extends Div {
    * any "moment/locale/&lt;lang&gt;" module the application imported, see the
    * demo's locale example), and otherwise from the browser's built-in Intl
    * (CLDR) data, so any language the browser knows works without frontend
-   * setup. Only language tags the browser itself does not know fall back to
-   * English, with a console warning. The UI strings vis-timeline displays
+   * setup. Locales resolved from Intl also render the day-of-month axis rows
+   * in the language's own name order with full names (Hungarian "Október 2
+   * Péntek"), instead of the English word order ("P 2 Október") vis-timeline
+   * hardcodes. Only language tags the browser itself does not know fall back
+   * to English, with a console warning. The UI strings vis-timeline displays
    * itself are not covered by locale data; use {@link #setLocaleStrings} for
    * those. Note that moment.js locales are global: all timelines on the same
    * page share the last locale set. Defaults to English.

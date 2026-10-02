@@ -49,8 +49,40 @@ function _defineLocaleFromIntl(m, locale) {
       // CLDR short forms carry their own trailing dot ("nov.", "pe."); the
       // converted patterns emit that dot as a literal, so keep it out of the
       // arrays or it would render twice.
-      return out.replace(/\.+$/, '');
+      var name = out.replace(/\.+$/, '');
+      // Several languages carry lower-case month/weekday names in their CLDR
+      // data (Hungarian "október", "péntek"); these names only ever surface
+      // as stand-alone timeline labels (axis rows, tooltips), never inside a
+      // sentence, so capitalize them.
+      return name.charAt(0).toUpperCase() + name.slice(1);
     });
+  }
+
+  // vis-timeline's day-of-month axis labels hardcode English word order:
+  // major "ddd D MMMM", minor "ddd D". Languages whose CLDR data orders the
+  // parts differently (Hungarian closes the full date with the weekday:
+  // "... október 5., péntek") render the same row in that order, so derive
+  // both strings from the locale's own full date pattern instead: the
+  // month/day/weekday parts in Intl's order, full-width tokens (CLDR rarely
+  // has an abbreviated weekday to begin with - Hungarian has none and Intl
+  // substitutes the 1-letter "P"), literals dropped to keep tick labels
+  // compact. Returned for _processOptions to hand vis as options.format.
+  var dayLabels = null;
+  try {
+    var order = [], tokens = { month: 'MMMM', day: 'D', weekday: 'dddd' };
+    new Intl.DateTimeFormat(locale, { dateStyle: 'full' })
+      .formatToParts(new Date(year, 10, 5)).forEach(function (p) {
+        if (p.type === 'month' || p.type === 'day' || p.type === 'weekday') {
+          order.push(tokens[p.type]);
+        }
+      });
+    if (order.indexOf('MMMM') >= 0 && order.indexOf('D') >= 0) {
+      dayLabels = {
+        major: order.join(' '),
+        minor: order.length > 2 ? order.filter(function (t) { return t !== 'MMMM'; }).join(' ') : undefined
+      };
+    }
+  } catch (e) {
   }
 
   // Convert an Intl date format into the equivalent moment format string,
@@ -125,6 +157,7 @@ function _defineLocaleFromIntl(m, locale) {
   if (!defined) {
     throw new Error('moment rejected the synthesized "' + locale + '" locale');
   }
+  return dayLabels;
 }
 
 window.vcftimeline = {
@@ -359,6 +392,10 @@ window.vcftimeline = {
 	  var options = {};
 	  Object.assign(options, parsedOptions, defaultOptions);
 
+	  // Day-label strings derived from Intl for a synthesized locale
+	  // (see _defineLocaleFromIntl); null whenever vis' own defaults apply.
+	  var dayLabels = null;
+
 	  if (locale) {
 		// vis-timeline bundles its own moment with data for its 10 built-in
 		// languages; the npm moment knows every "moment/locale/<lang>" module
@@ -380,11 +417,14 @@ window.vcftimeline = {
 		  // silently. An imported "moment/locale/<lang>" module stays the more
 		  // exact source when present.
 		  try {
-		    _defineLocaleFromIntl(moment, locale);
+		    dayLabels = _defineLocaleFromIntl(moment, locale);
 		    npmLang = moment.locale(locale);
 		    npmKnown = String(npmLang).toLowerCase() === String(locale).toLowerCase();
 		  } catch (e) {
 		    // Language tag Intl rejects: fall through to the warning.
+		  }
+		  if (!npmKnown) {
+		    dayLabels = null;
 		  }
 		  if (!npmKnown && !_missingLocaleWarned[locale]) {
 		    _missingLocaleWarned[locale] = true;
@@ -408,6 +448,22 @@ window.vcftimeline = {
 		options.moment = visMoment;
 		options.locale = 'en';
 	  }
+
+	  // The day-of-month axis rows (major "ddd D MMMM" at hour/minute steps,
+	  // minor "ddd D" at the weekday step) are vis' TimeStep.FORMAT defaults
+	  // and carry English word order. Send the Intl-derived strings for a
+	  // synthesized locale, vis' defaults otherwise — always explicitly, as
+	  // vis keeps format values it isn't given a new one for, and the
+	  // TimelineOptions API exposes no format field to preserve.
+	  options.format = {
+		majorLabels: {
+		  minute: (dayLabels && dayLabels.major) || 'ddd D MMMM',
+		  hour: (dayLabels && dayLabels.major) || 'ddd D MMMM'
+		},
+		minorLabels: {
+		  weekday: (dayLabels && dayLabels.minor) || 'ddd D'
+		}
+	  };
 
 	  if(autoZoom && options.min && options.max){
 		  options.start = options.min;

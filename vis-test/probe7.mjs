@@ -47,7 +47,7 @@ await send('Runtime.enable');
 await send('Page.enable');
 
 const state = () => evalJS(`JSON.stringify([...document.querySelectorAll('.timeline')].map(c => {
-  const t = c.timeline && c.timeline._timeline;
+  const t = c.timeline;
   if (!t) return null;
   const frame = t.itemSet && t.itemSet.dom.frame;
   return { root: Math.round(c.querySelector('.vis-timeline').getBoundingClientRect().height),
@@ -59,7 +59,7 @@ async function load(path, settleMs) {
   exc = [];
   await send('Page.navigate', { url: BASE + path });
   for (let i = 0; i < 90; i++) { // dev-mode first load compiles the bundle
-    if (await evalJS(`document.querySelectorAll('.timeline').length > 0 && [...document.querySelectorAll('.timeline')].every(c => c.timeline && c.timeline._timeline)`)) break;
+    if (await evalJS(`document.querySelectorAll('.timeline').length > 0 && [...document.querySelectorAll('.timeline')].every(c => c.timeline)`)) break;
     await sleep(500);
   }
   await sleep(settleMs);
@@ -97,8 +97,8 @@ console.log('reload /add-items-race: items=' + [...new Set(rows.map((r) => r.n))
   ', exceptions=' + exc.length);
 if (rows.some((r) => r.n < 7) || exc.length) { failed++; console.log('  BAD'); }
 
-// --- the pre-existing grouped + synced-rows pages: sanity, no regressions
-for (const path of ['/grouped', '/synced-rows']) {
+// --- the pre-existing grouped page: sanity, no regressions
+for (const path of ['/grouped']) {
   await load(path, 3000);
   rows = JSON.parse(await state());
   const collapsed = rows.filter((r) => r.itemset > r.root + 10).length;

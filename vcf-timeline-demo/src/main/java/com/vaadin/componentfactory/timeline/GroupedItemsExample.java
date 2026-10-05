@@ -26,7 +26,7 @@ public class GroupedItemsExample extends Div {
 
     List<Group> groups = Arrays.asList(group1, group2, group3);
 
-    // Team A: three sequential items -> arrows chain within the row
+    // Team A: three sequential items
     List<Item> items =
         Arrays.asList(
             item("a1", 2, 30, 5, 0, "A 1", "1"),

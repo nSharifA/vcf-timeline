@@ -16,14 +16,11 @@ Timeline component provides support to the following features:
 - Edit an item by drag and drop.
 - Multiple items selection.
 - Possiblity to define zoom options (e.g. 1 day, 3 days, 5 days).
-- Items are shown connected by an horizontal line between them. (*)
 - Show tooltips for items.
 - Possibility to revert resizing or dragging if condition is not met.
 - Autoscrolling when reaching limits of visible range.
 - Tooltip on item update.
 - Group items into rows using `Timeline.setGroups(...)` and `Item.setGroup(...)`.
-
-(*) Horizontal lines implementation is based on [timeline-arrows](https://github.com/javdome/timeline-arrows).
 
 ## Development instructions
 

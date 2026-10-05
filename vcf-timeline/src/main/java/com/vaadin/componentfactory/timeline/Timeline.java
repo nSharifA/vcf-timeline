@@ -54,7 +54,6 @@ import java.util.stream.Collectors;
 @SuppressWarnings("serial")
 @NpmPackage(value = "vis-timeline", version = "7.4.9")
 @NpmPackage(value = "moment", version = "2.29.1")
-@JsModule("./src/arrow.js")
 @JsModule("./src/vcf-timeline.js")
 @CssImport("vis-timeline/styles/vis-timeline-graph2d.min.css")
 @CssImport("./styles/timeline.css")
@@ -393,19 +392,6 @@ public class Timeline extends Div {
    */
   public void setStack(boolean stack) {
     getTimelineOptions().stack = stack;
-    updateTimelineOptions();
-  }
-
-  /**
-   * Sets whether the connection arrows between consecutive items are drawn.
-   * The arrows are rendered client-side by the bundled arrow.js script, which
-   * chains items in time order; disabling them stops that script from drawing
-   * and removes any arrows already drawn. By default arrows are enabled.
-   *
-   * @param arrowsEnabled true if connection arrows should be drawn
-   */
-  public void setArrowsEnabled(boolean arrowsEnabled) {
-    getTimelineOptions().arrowsEnabled = arrowsEnabled;
     updateTimelineOptions();
   }
 

@@ -17,7 +17,6 @@
  * limitations under the License.
  * #L%
  */
-import Arrow from './arrow.js';
 import moment from 'moment';
 
 import { DataSet, Timeline, moment as visMoment } from 'vis-timeline/standalone/umd/vis-timeline-graph2d.min.js';
@@ -215,23 +214,19 @@ window.vcftimeline = {
 			? new Timeline(container, items, groups, options)
 			: new Timeline(container, items, options);
       		
-      const line_timeline = new Arrow(timeline);
-	  container.timeline = line_timeline;
+	  container.timeline = timeline;
 
-	  container.timeline._timeline.on("changed", () => {
-		if (container.arrowsEnabled !== false) {
-		  this._updateConnections(container);
-		}
+	  container.timeline.on("changed", () => {
 		this._updateTimelineHeight(container);
 		this._restackInitialGroupRows(container);
 	  });
 
-	  container.timeline._timeline.on('select', (properties) => {
+	  container.timeline.on('select', (properties) => {
 		container.$server.onSelect(properties.items);
 	  });
 
 	  var mouseX;
-	  container.timeline._timeline.on('mouseMove', (properties) => {
+	  container.timeline.on('mouseMove', (properties) => {
 		mouseX = properties.event.clientX;
 	  });
 
@@ -239,27 +234,27 @@ window.vcftimeline = {
 	  this._flushPendingCalls(container);
 
 	  setInterval(function(){
-		var isDragging = container.timeline._timeline.itemSet.touchParams.itemIsDragging;
-		var isResizingRight = container.timeline._timeline.itemSet.touchParams.dragRightItem;
-		var isResizingLeft = container.timeline._timeline.itemSet.touchParams.dragLeftItem;
+		var isDragging = container.timeline.itemSet.touchParams.itemIsDragging;
+		var isResizingRight = container.timeline.itemSet.touchParams.dragRightItem;
+		var isResizingLeft = container.timeline.itemSet.touchParams.dragLeftItem;
 		var isResizing = isResizingRight !== isResizingLeft;
 		if (isDragging) {
-			let multiple = container.timeline._timeline.itemSet.touchParams.itemProps.length > 1;
+			let multiple = container.timeline.itemSet.touchParams.itemProps.length > 1;
 			let itemsInitialXMap = null;
 			let selectedItems = null;
 			if(multiple) {
 				itemsInitialXMap = new Map();
-				container.timeline._timeline.itemSet.touchParams.itemProps.forEach(obj => {
+				container.timeline.itemSet.touchParams.itemProps.forEach(obj => {
 					itemsInitialXMap.set(obj.data.id, obj.initialX);
 				});
-				selectedItems = Array.from(container.timeline._timeline.itemSet.touchParams.itemProps, obj => obj.item);
+				selectedItems = Array.from(container.timeline.itemSet.touchParams.itemProps, obj => obj.item);
 			} 
 
-			var ix = container.timeline._timeline.itemSet.touchParams.itemProps[0].initialX; 
-			var item = container.timeline._timeline.itemSet.touchParams.selectedItem;
-			var range = container.timeline._timeline.getWindow();
-			var widthInPixels = container.timeline._timeline.body.domProps.lastWidth;
-			var centerOfTimelineInPixels = container.timeline._timeline.dom.container.offsetLeft + container.timeline._timeline.body.domProps.lastWidth / 2;
+			var ix = container.timeline.itemSet.touchParams.itemProps[0].initialX; 
+			var item = container.timeline.itemSet.touchParams.selectedItem;
+			var range = container.timeline.getWindow();
+			var widthInPixels = container.timeline.body.domProps.lastWidth;
+			var centerOfTimelineInPixels = container.timeline.dom.container.offsetLeft + container.timeline.body.domProps.lastWidth / 2;
 			var mouseAtLeftOfCenter = mouseX < centerOfTimelineInPixels;
 			var widthInMilliseconds = range.end.valueOf() - range.start.valueOf();
 
@@ -267,7 +262,7 @@ window.vcftimeline = {
 			if(mouseAtLeftOfCenter && item.data.start <= range.start && (options.min == undefined || range.start > new Date(options.min)) && !isResizing) {
 				window.vcftimeline._moveWindowToRight(container, range, widthInMilliseconds);
 				if(multiple){					
-					container.timeline._timeline.itemSet.touchParams.itemProps.forEach(ip => {
+					container.timeline.itemSet.touchParams.itemProps.forEach(ip => {
 						let id = ip.data.id;
 						let initialXValue = itemsInitialXMap.get(id);
 						ip.initialX = initialXValue + (widthInPixels / 50);
@@ -277,7 +272,7 @@ window.vcftimeline = {
 						selectedItem.data.end = new Date(selectedItem.data.end.valueOf() - (widthInMilliseconds / 50));
 					});
 				} else {					
-					container.timeline._timeline.itemSet.touchParams.itemProps[0].initialX = ix + (widthInPixels / 50);
+					container.timeline.itemSet.touchParams.itemProps[0].initialX = ix + (widthInPixels / 50);
 					item.data.start = new Date(item.data.start.valueOf() - (widthInMilliseconds / 50));
 					item.data.end = new Date(item.data.end.valueOf() - (widthInMilliseconds / 50));
 				}
@@ -285,7 +280,7 @@ window.vcftimeline = {
 			} else if(!mouseAtLeftOfCenter && item.data.end >= range.end && (options.max == undefined || range.end < new Date(options.max)) && !isResizing) {
 				window.vcftimeline._moveWindowToLeft(container, range, widthInMilliseconds);
 				if(multiple){										
-					container.timeline._timeline.itemSet.touchParams.itemProps.forEach(ip => {
+					container.timeline.itemSet.touchParams.itemProps.forEach(ip => {
 						let id = ip.data.id;
 						let initialXValue = itemsInitialXMap.get(id);
 						ip.initialX = initialXValue - (widthInPixels / 50);
@@ -295,7 +290,7 @@ window.vcftimeline = {
 						selectedItem.data.end = new Date(selectedItem.data.end.valueOf() + (widthInMilliseconds / 50));
 					});
 				} else {					
-					container.timeline._timeline.itemSet.touchParams.itemProps[0].initialX = ix - (widthInPixels / 50);
+					container.timeline.itemSet.touchParams.itemProps[0].initialX = ix - (widthInPixels / 50);
 					item.data.start = new Date(item.data.start.valueOf() + (widthInMilliseconds / 50));
 					item.data.end = new Date(item.data.end.valueOf() + (widthInMilliseconds / 50));
 				}
@@ -329,7 +324,7 @@ window.vcftimeline = {
   	},
 
 	_moveWindowToRight(container, range, widthInMilliseconds) {
-		container.timeline._timeline.setWindow(
+		container.timeline.setWindow(
 			new Date(range.start.valueOf() - (widthInMilliseconds / 50)),
 			new Date(range.end.valueOf() - (widthInMilliseconds / 50)),
 			{animation: false}
@@ -337,7 +332,7 @@ window.vcftimeline = {
 	},
 
 	_moveWindowToLeft(container, range, widthInMilliseconds) {
-		container.timeline._timeline.setWindow(
+		container.timeline.setWindow(
 			new Date(range.start.valueOf() + (widthInMilliseconds / 50)),
 			new Date(range.end.valueOf() + (widthInMilliseconds / 50)),
 			{animation: false}
@@ -352,11 +347,6 @@ window.vcftimeline = {
 
 	  var autoZoom = parsedOptions.autoZoom;
 	  delete parsedOptions.autoZoom;
-
-	  // Not a vis option: gates the arrow.js dependency drawing. Stashed on the
-	  // container so the event handlers below can consult it at any time.
-	  container.arrowsEnabled = parsedOptions.arrowsEnabled !== false;
-	  delete parsedOptions.arrowsEnabled;
 
 	  var tooltipOnItemUpdateTime = parsedOptions.tooltipOnItemUpdateTime;
 	  var tooltipDateFormat = parsedOptions.tooltipOnItemUpdateTimeDateFormat;
@@ -373,7 +363,7 @@ window.vcftimeline = {
 
 	  var defaultOptions = {
 		onMove: function(item, callback) {
-			var oldItem = container.timeline._timeline.itemSet.itemsData.get(item.id);
+			var oldItem = container.timeline.itemSet.itemsData.get(item.id);
 			var isResizedItem = oldItem.end.getTime() - oldItem.start.getTime() !=  item.end.getTime() - item.start.getTime();
 			var moveItem = true;
 
@@ -385,10 +375,6 @@ window.vcftimeline = {
 				callback(item); 							
 				var startDate = window.vcftimeline._convertDate(item.start);
 				var endDate = window.vcftimeline._convertDate(item.end);
-				//update connections
-				if (container.arrowsEnabled !== false) {
-					window.vcftimeline._updateConnections(container);
-				}
 				//call server
 				container.$server.onMove(item.id, startDate, endDate, isResizedItem);
 			} else {
@@ -525,24 +511,17 @@ window.vcftimeline = {
 	setOptions: function(container, optionsJson) {
 		var options = this._processOptions(container, optionsJson)
 		if (!container.timeline) {
-			return; // timeline creation still pending (see create); the flag
-				        // stashed above is re-read by _createTimeline's options
+			return; // timeline creation still pending (see create); the deferred
+				        // _createTimeline call applies the options itself
 		}
-		container.timeline._timeline.setOptions(options);
+		container.timeline.setOptions(options);
 		// Core has propagated the locale-selected moment to all components,
 		// but the axis only repaints when the range changes; make sure it
 		// repaints now, so labels pick up the new language immediately.
-		var tl = container.timeline._timeline;
+		var tl = container.timeline;
 		if (options.moment) {
 			if (tl.timeAxis) { tl.timeAxis.options.moment = options.moment; tl.timeAxis.redraw(); }
 			if (tl.timeAxis2) { tl.timeAxis2.options.moment = options.moment; tl.timeAxis2.redraw(); }
-		}
-		// Sync already-drawn arrows with the arrowsEnabled flag _processOptions
-		// just stashed: clear them when disabled, redraw when (re)enabled.
-		if (container.arrowsEnabled) {
-			this._updateConnections(container);
-		} else {
-			container.timeline.setDependencies([]);
 		}
 	},
 
@@ -559,7 +538,7 @@ window.vcftimeline = {
 		if (this._queuePreCreate(container, 'addItems', [itemsJson])) {
 			return;
 		}
-		var itemsData = container.timeline._timeline.itemsData;
+		var itemsData = container.timeline.itemsData;
 		// Items added before create() also ride in its itemsJson (the server
 		// keeps the item list and create() carries it), so the queue replay
 		// must not duplicate what the constructor already placed: add only
@@ -571,7 +550,7 @@ window.vcftimeline = {
 				existing.add(item.id);
 			}
 		});
-		container.timeline._timeline.fit();
+		container.timeline.fit();
 	},
 
 	setItems: function(container, itemsJson) {
@@ -579,19 +558,19 @@ window.vcftimeline = {
 			return;
 		}
 		var items = new DataSet(JSON.parse(itemsJson));
-		container.timeline._timeline.setItems(items);
-		container.timeline._timeline.fit();
+		container.timeline.setItems(items);
+		container.timeline.fit();
 	},
 
 	// create() defers the vis constructor by a setTimeout, so server commands
 	// sent in the same round trip as attach execute while container.timeline
-	// is still undefined and used to throw "reading '_timeline'" — an uncaught
-	// throw aborts the remaining commands of that response. Queue such calls
-	// and replay them once the constructor has run (_flushPendingCalls).
-	// setOptions/setGroups have their own pre-create handling and are not
-	// routed through here.
+	// is still undefined and would throw on the first property access — an
+	// uncaught throw aborts the remaining commands of that response. Queue
+	// such calls and replay them once the constructor has run
+	// (_flushPendingCalls). setOptions/setGroups have their own pre-create
+	// handling and are not routed through here.
 	_queuePreCreate: function(container, name, args) {
-		if (container.timeline != undefined && container.timeline._timeline != undefined) {
+		if (container.timeline != undefined) {
 			return false;
 		}
 		if (container.pendingCalls == undefined) {
@@ -619,7 +598,7 @@ window.vcftimeline = {
 		// Pass null to vis when the list is empty: an empty DataSet would keep
 		// the timeline in grouped mode and ungrouped items would not render.
 		if (container.timeline) {
-			container.timeline._timeline.setGroups(groups.getIds().length > 0 ? groups : null);
+			container.timeline.setGroups(groups.getIds().length > 0 ? groups : null);
 			container.groupsDataSet = groups;
 		} else {
 			// timeline creation still pending (see create): stash for _createTimeline
@@ -629,22 +608,22 @@ window.vcftimeline = {
 	},
 	
 	revertMove: function(container, itemId, itemJson) {
-	    var itemData = container.timeline._timeline.itemSet.items[itemId].data;
+	    var itemData = container.timeline.itemSet.items[itemId].data;
 	    var parsedItem = JSON.parse(itemJson);
 		itemData.start = parsedItem.start;
 		itemData.end = parsedItem.end;
 
-		let calculatedLeft = container.timeline._timeline.itemSet.items[itemId].conversion.toScreen(moment(itemData.start));
-   		container.timeline._timeline.itemSet.items[itemId].left = calculatedLeft;
+		let calculatedLeft = container.timeline.itemSet.items[itemId].conversion.toScreen(moment(itemData.start));
+   		container.timeline.itemSet.items[itemId].left = calculatedLeft;
 
-		container.timeline._timeline.itemsData.update(itemData);
+		container.timeline.itemsData.update(itemData);
 	},
 	
 	removeItem: function(container, itemId) {
 		if (this._queuePreCreate(container, 'removeItem', [itemId])) {
 			return;
 		}
-		container.timeline._timeline.itemsData.remove(itemId);
+		container.timeline.itemsData.remove(itemId);
 		container.$server.onRemove(itemId);
 	},
 
@@ -652,19 +631,19 @@ window.vcftimeline = {
 		if (this._queuePreCreate(container, 'updateItemContent', [itemId, newContent])) {
 			return;
 		}
-		var itemData = container.timeline._timeline.itemSet.items[itemId].data;
+		var itemData = container.timeline.itemSet.items[itemId].data;
 		itemData.content = newContent;
-		container.timeline._timeline.itemsData.update(itemData);
+		container.timeline.itemsData.update(itemData);
 	},
 	
 	setZoomOption: function(container, zoomDays) {
 		var startDate;
-		var selectedItems = container.timeline._timeline.getSelection();
+		var selectedItems = container.timeline.getSelection();
 		if(selectedItems.length > 0){
 			var selectedItem = selectedItems.length > 1 ? this._sortItems(selectedItems)[0] : selectedItems[0];
-			startDate = container.timeline._timeline.itemSet.items[selectedItem].data.start;
+			startDate = container.timeline.itemSet.items[selectedItem].data.start;
 		} else {
-			var range = container.timeline._timeline.getWindow();
+			var range = container.timeline.getWindow();
 			startDate = range.start;
 		}
 
@@ -676,7 +655,7 @@ window.vcftimeline = {
 		var end = moment(startDate);
 		end.add(zoomDays, 'days');
 		
-		container.timeline._timeline.setWindow({
+		container.timeline.setWindow({
 			start: start,
 			end: end,
 		});
@@ -696,58 +675,6 @@ window.vcftimeline = {
 	  return sortedItems;
 	},
 
-	_createConnections: function(items) {
-	  // Sort items in order to be able to create connections for timeline-arrow
-	  // (horizontal line)
-	  var sortedItems = this._sortItems(items);
-
-	  // Chain items within their row only: with groups, each group renders in
-	  // its own row and an arrow must never jump between rows. Ungrouped
-	  // timelines have a single implicit row (group undefined), which keeps the
-	  // original connect-consecutive-by-start-time behavior unchanged.
-	  var byGroup = new Map();
-	  sortedItems.forEach(function(item) {
-		var key = item.group == null ? "" : String(item.group);
-		var bucket = byGroup.get(key);
-		if (bucket == undefined) {
-		  bucket = [];
-		  byGroup.set(key, bucket);
-		}
-		bucket.push(item);
-	  });
-
-      // Create connections for items
-	  var connections = [];
-	  var id = 1;
-	  byGroup.forEach(function(groupItems) {
-		  for(let i = 0; i < groupItems.length-1; i++) {
-			  var element = groupItems[i];
-			  var nextElement = groupItems[i + 1];
-
-			  // Only chain when nextElement actually follows element in time.
-			  // Overlapping items are stacked side by side, not sequenced:
-			  // an arrow between them would point backwards and is not a
-			  // "leads to" relationship.
-			  if (new Date(nextElement.start).valueOf() < new Date(element.end).valueOf()) {
-				  continue;
-			  }
-
-			  var item = {}
-			  item ["id"] = id++;
-			  item ["id_item_1"] = element.id;
-			  item ["id_item_2"] = nextElement.id;
-
-			  connections.push(item);
-		  }
-	  });
-	  return connections;
-	},
-	
-	_updateConnections: function(container) {
-		var connections = this._createConnections(container.timeline._timeline.itemsData.get());
-		container.timeline.setDependencies(connections);
-	},
-
 	_updateTimelineHeight: function(container) {
 		// With groups, vis-timeline's native auto height (options.height left
 		// undefined) grows the main area to fit every group row. Freezing the
@@ -756,22 +683,22 @@ window.vcftimeline = {
 		// it if a freeze from the ungrouped state is still in effect.
 		if(container.groupsDataSet != undefined && container.groupsDataSet.getIds().length > 0){
 			if(container.timelineHeight != undefined
-					&& container.timeline._timeline.options.height == container.timelineHeight){
-				container.timeline._timeline.options.height = undefined;
+					&& container.timeline.options.height == container.timelineHeight){
+				container.timeline.options.height = undefined;
 				// Clearing the option is not enough: vis only re-reads it at the
 				// start of a redraw, and the changed event we are running in fires
 				// after that redraw — without another one the height-freeze would
 				// stay in effect on screen until some later, unrelated redraw.
-				container.timeline._timeline.redraw();
+				container.timeline.redraw();
 			}
 			container.timelineHeight = undefined;
 			return;
 		}
 		if(container.timelineHeight == undefined){
-			container.timelineHeight = container.timeline._timeline.dom.container.getBoundingClientRect().height;
+			container.timelineHeight = container.timeline.dom.container.getBoundingClientRect().height;
 		}
-		if(container.timeline._timeline.options.height == undefined){
-			container.timeline._timeline.options.height = container.timelineHeight;
+		if(container.timeline.options.height == undefined){
+			container.timeline.options.height = container.timelineHeight;
 		}
 		// The freeze above is armed on the FIRST changed event, and that races
 		// with vis's initial fit and item stacking (with server push the first
@@ -784,7 +711,7 @@ window.vcftimeline = {
 		if(container.frozenHeightChecked == undefined){
 			container.frozenHeightChecked = true;
 			var me = this;
-			var timeline = container.timeline._timeline;
+			var timeline = container.timeline;
 			var deadline = Date.now() + 2500;
 			requestAnimationFrame(function() {
 				me._ensureFrozenHeight(container, timeline, deadline);
@@ -800,10 +727,11 @@ window.vcftimeline = {
 	// Checks repeat every 150ms until a short grace deadline, because a too-early
 	// first changed can even precede the items arriving over push. The deadline
 	// is what keeps this out of later user interaction: once the timeline is
-	// live, pinning the height is the intended behaviour (synced rows must not
-	// jump while zooming), so only the initial-load race may be healed.
+	// live, pinning the height is the intended behaviour (the height of a
+	// live timeline must not jump while zooming), so only the initial-load
+	// race may be healed.
 	_ensureFrozenHeight: function(container, timeline, deadline) {
-		if (!container.timeline || container.timeline._timeline !== timeline) {
+		if (!container.timeline || container.timeline !== timeline) {
 			return; // timeline destroyed or rebuilt in the meantime
 		}
 		if (!timeline.dom.centerContainer.isConnected) {
@@ -854,9 +782,9 @@ window.vcftimeline = {
 			return; // ungrouped: nothing to restack; stay armed in case groups arrive later
 		}
 		container.initialGroupRowsRestacked = true;
-		var timeline = container.timeline._timeline;
+		var timeline = container.timeline;
 		requestAnimationFrame(() => requestAnimationFrame(() => {
-			if (container.timeline && container.timeline._timeline === timeline) {
+			if (container.timeline && container.timeline === timeline) {
 				timeline.itemSet.markDirty({ restackGroups: true, refreshItems: true });
 				timeline.redraw();
 				this._ensureInitialMainHeight(container, timeline, 0);
@@ -887,7 +815,7 @@ window.vcftimeline = {
 		if (attempts > 15) {
 			return; // give up rather than risk redraw churn on a pathological layout
 		}
-		if (!container.timeline || container.timeline._timeline !== timeline) {
+		if (!container.timeline || container.timeline !== timeline) {
 			return; // timeline destroyed or rebuilt in the meantime
 		}
 		if (!timeline.dom.centerContainer.isConnected) {

@@ -30,8 +30,6 @@ public class MainLayout extends AppLayout {
         new RouterLink("Tooltip on item update ", TooltipOnUpdateExample.class);
     final RouterLink groupedItemsExample =
         new RouterLink("Grouped items", GroupedItemsExample.class);
-    final RouterLink syncedRowsExample =
-        new RouterLink("Grouped rows with side components", SyncedRowsExample.class);
     final RouterLink addItemsRaceExample =
         new RouterLink("Add items before attach", AddItemsRaceExample.class);
     final RouterLink localeExample = new RouterLink("Localization", LocaleExample.class);
@@ -39,7 +37,7 @@ public class MainLayout extends AppLayout {
     final VerticalLayout menuLayout = new VerticalLayout(readonlyEmptyExample, addEmptyItemsExample,
         resizeItems, dndItems, tooltipsExample, classNameExample, readonlyExample,
         updateItemContentExample, zoomOptionsExample, overlappExample, tooltipOnUpdateExample,
-        groupedItemsExample, syncedRowsExample, addItemsRaceExample, localeExample);
+        groupedItemsExample, addItemsRaceExample, localeExample);
     addToDrawer(menuLayout);
     addToNavbar(drawerToggle);
   }

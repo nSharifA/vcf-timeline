@@ -27,6 +27,40 @@ import { DataSet, Timeline, moment as visMoment } from 'vis-timeline/standalone/
 // setOptions call would otherwise repeat the same warning.
 var _missingLocaleWarned = {};
 
+// Day-label format strings derived from Intl, per language tag (see
+// _deriveDayLabels). Module-level like _missingLocaleWarned: timelines get
+// created and reconfigured over and over on a page.
+var _dayLabelsCache = {};
+
+// vis-timeline's day-of-month axis labels hardcode English word order:
+// major "ddd D MMMM", minor "ddd D". Languages whose CLDR data orders the
+// parts differently (Hungarian closes the full date with the weekday:
+// "... október 5., péntek") render the same row in that order, so derive
+// both strings from the locale's own full date pattern instead: the
+// month/day/weekday parts in Intl's order, full-width tokens (CLDR rarely
+// has an abbreviated weekday to begin with - Hungarian has none and Intl
+// substitutes the 1-letter "P"), literals dropped to keep tick labels
+// compact. Null when Intl has no full pattern to read the order off.
+function _deriveDayLabels(locale) {
+  try {
+    var order = [], tokens = { month: 'MMMM', day: 'D', weekday: 'dddd' };
+    new Intl.DateTimeFormat(locale, { dateStyle: 'full' })
+      .formatToParts(new Date(2021, 10, 5)).forEach(function (p) {
+        if (p.type === 'month' || p.type === 'day' || p.type === 'weekday') {
+          order.push(tokens[p.type]);
+        }
+      });
+    if (order.indexOf('MMMM') >= 0 && order.indexOf('D') >= 0) {
+      return {
+        major: order.join(' '),
+        minor: order.length > 2 ? order.filter(function (t) { return t !== 'MMMM'; }).join(' ') : undefined
+      };
+    }
+  } catch (e) {
+  }
+  return null;
+}
+
 // Build a moment.js locale from Intl/CLDR data for languages neither bundled
 // moment copy has data for (see the locale block in _processOptions). Only
 // what vis-timeline reads off localeData() is generated — month/weekday
@@ -58,32 +92,12 @@ function _defineLocaleFromIntl(m, locale) {
     });
   }
 
-  // vis-timeline's day-of-month axis labels hardcode English word order:
-  // major "ddd D MMMM", minor "ddd D". Languages whose CLDR data orders the
-  // parts differently (Hungarian closes the full date with the weekday:
-  // "... október 5., péntek") render the same row in that order, so derive
-  // both strings from the locale's own full date pattern instead: the
-  // month/day/weekday parts in Intl's order, full-width tokens (CLDR rarely
-  // has an abbreviated weekday to begin with - Hungarian has none and Intl
-  // substitutes the 1-letter "P"), literals dropped to keep tick labels
-  // compact. Returned for _processOptions to hand vis as options.format.
-  var dayLabels = null;
-  try {
-    var order = [], tokens = { month: 'MMMM', day: 'D', weekday: 'dddd' };
-    new Intl.DateTimeFormat(locale, { dateStyle: 'full' })
-      .formatToParts(new Date(year, 10, 5)).forEach(function (p) {
-        if (p.type === 'month' || p.type === 'day' || p.type === 'weekday') {
-          order.push(tokens[p.type]);
-        }
-      });
-    if (order.indexOf('MMMM') >= 0 && order.indexOf('D') >= 0) {
-      dayLabels = {
-        major: order.join(' '),
-        minor: order.length > 2 ? order.filter(function (t) { return t !== 'MMMM'; }).join(' ') : undefined
-      };
-    }
-  } catch (e) {
-  }
+  // The day-label order comes from the locale's own Intl pattern (see
+  // _deriveDayLabels) and is cached module-wide: the synthesized locale is
+  // defined on the global (sticky) moment copy, so from the second timeline
+  // on _processOptions no longer reaches this function and reads the order
+  // off the cache instead.
+  var dayLabels = _dayLabelsCache[locale] || (_dayLabelsCache[locale] = _deriveDayLabels(locale));
 
   // Convert an Intl date format into the equivalent moment format string,
   // keeping each part's order and stuck-on punctuation on its real side
@@ -432,6 +446,17 @@ window.vcftimeline = {
 			    + ' "moment/locale/' + locale + '" module nor the browser\'s Intl data knows that'
 			    + ' language tag; dates render in English.');
 		  }
+		}
+		// The synthesized locale is defined on the global (sticky) moment
+		// copy: from the second timeline on - and on every setOptions call -
+		// moment.locale() already answers with the language, the branch
+		// above is skipped, and without this the day rows would regress to
+		// vis' English-order defaults. The label order lives in Intl, not in
+		// moment data, so serve it from the cache or, for an imported
+		// "moment/locale/<lang>" (never synthesized), derive it here. vis'
+		// own built-in languages keep their stock format.
+		if (!visKnown && locale && !dayLabels) {
+			dayLabels = _dayLabelsCache[locale] || (_dayLabelsCache[locale] = _deriveDayLabels(locale));
 		}
 		options.moment = npmKnown ? moment : visMoment;
 		if (localeStrings) {
